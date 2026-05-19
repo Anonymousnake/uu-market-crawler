@@ -139,6 +139,18 @@ Expected shape:
 When this file exists, radar risk scoring adds penalties for high 7-day
 volatility, recent volatility spikes, and weak 24-hour volume.
 
+Sync Steam-side history from CS2Cap:
+
+```powershell
+$env:CS2CAP_API_KEY='...'
+$env:UU_HISTORY_CACHE_FILE='D:/Codex/uu-market-crawler/steam_history_cache.json'
+python .\cs2cap_history_sync.py
+```
+
+The sync uses CS2Cap `/v1/prices` with `providers=steam` and `currency=CNY`,
+then builds local daily snapshots. Keep `CS2CAP_HISTORY_LIMIT` conservative on
+the free tier; 30 items once per day is about 900 requests per month.
+
 Run the filter/tag probe instead:
 
 ```powershell

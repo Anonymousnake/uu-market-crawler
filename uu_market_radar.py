@@ -5,18 +5,17 @@ import sqlite3
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
+from steam_market_api import SteamMarketConfig, get_market_snapshot
 from uu_market_probe import (
     QUERY_SALE_TEMPLATE_URL,
     build_headers,
     init_cache,
     parse_sale_template_response,
     post_json_once,
-    sleep_jitter,
     to_decimal,
     write_cache,
 )
@@ -40,7 +39,11 @@ class RadarConfig:
     page_size: int
     sleep_min: Decimal
     sleep_max: Decimal
-    history_cache_file: Path
+    steam_market_cache_file: Path
+    usd_cny_rate: Decimal
+    steam_cache_ttl_seconds: int
+    steam_sleep_min: Decimal
+    steam_sleep_max: Decimal
 
 
 def env(name: str, default: str = "") -> str:
@@ -75,7 +78,13 @@ def load_config() -> RadarConfig:
         page_size=int_env("UU_PAGE_SIZE", "20"),
         sleep_min=decimal_env("UU_SLEEP_MIN", "2.5"),
         sleep_max=decimal_env("UU_SLEEP_MAX", "6.0"),
-        history_cache_file=Path(env("UU_HISTORY_CACHE_FILE", str(Path(__file__).with_name("steam_history_cache.json")))),
+        steam_market_cache_file=Path(
+            env("STEAM_MARKET_CACHE_FILE", str(Path(__file__).with_name("steam_market_cache.json")))
+        ),
+        usd_cny_rate=decimal_env("USD_CNY_RATE", "7.20"),
+        steam_cache_ttl_seconds=int_env("STEAM_CACHE_TTL_SECONDS", "900"),
+        steam_sleep_min=decimal_env("STEAM_SLEEP_MIN", "1.5"),
+        steam_sleep_max=decimal_env("STEAM_SLEEP_MAX", "3.5"),
     )
 
 
@@ -124,9 +133,43 @@ def choose_exact(query: str, rows: list[dict[str, Any]]) -> dict[str, Any] | Non
     return rows[0] if rows else None
 
 
+def enrich_with_steam(row: dict[str, Any], config: RadarConfig) -> dict[str, Any]:
+    hash_name = str(row.get("hash_name") or "").strip()
+    if not hash_name:
+        return row
+    steam = get_market_snapshot(
+        hash_name,
+        cache_file=config.steam_market_cache_file,
+        config=SteamMarketConfig(
+            usd_cny_rate=config.usd_cny_rate,
+            cache_ttl_seconds=config.steam_cache_ttl_seconds,
+            sleep_min=float(config.steam_sleep_min),
+            sleep_max=float(config.steam_sleep_max),
+        ),
+    )
+    overview = steam.get("priceoverview") or {}
+    listing = steam.get("listing") or {}
+    row = dict(row)
+    row["steam_snapshot"] = steam
+    row["steam_price"] = overview.get("median_price")
+    row["steam_median_price"] = overview.get("median_price")
+    row["steam_lowest_price"] = overview.get("lowest_price")
+    row["steam_volume"] = overview.get("volume")
+    row["steam_lowest_sell_price"] = (listing.get("lowest_sell_order") or {}).get("price_cny")
+    row["steam_highest_buy_price"] = (listing.get("highest_buy_order") or {}).get("price_cny")
+    row["steam_lowest_sell_price_usd"] = (listing.get("lowest_sell_order") or {}).get("price_usd")
+    row["steam_highest_buy_price_usd"] = (listing.get("highest_buy_order") or {}).get("price_usd")
+    row["steam_sell_order_count"] = listing.get("sell_order_count")
+    row["steam_buy_order_count"] = listing.get("buy_order_count")
+    row["steam_orderbook_currency"] = listing.get("orderbook_currency")
+    row["steam_orderbook_fx_rate"] = listing.get("orderbook_usd_cny_rate")
+    row["history_stats"] = steam.get("history_stats")
+    return row
+
+
 def score_row(watch: dict[str, Any], row: dict[str, Any], min_on_sale_count: int) -> dict[str, Any]:
     uu_price = money(row.get("price"))
-    steam_price = money(row.get("steam_price"))
+    steam_price = money(row.get("steam_median_price") or row.get("steam_price"))
     on_sale_count = int(row.get("on_sale_count") or 0)
     steam_net = steam_price / STEAM_FEE_DIVISOR if steam_price is not None else None
     edge = (steam_net - uu_price) / uu_price if steam_net is not None and uu_price else None
@@ -146,7 +189,6 @@ def score_row(watch: dict[str, Any], row: dict[str, Any], min_on_sale_count: int
         kind=str(watch.get("kind") or ""),
         uu_price=uu_price,
         edge=edge,
-        steam_price=steam_price,
         on_sale_count=on_sale_count,
         min_on_sale_count=min_on_sale_count,
         history_stats=row.get("history_stats"),
@@ -162,6 +204,17 @@ def score_row(watch: dict[str, Any], row: dict[str, Any], min_on_sale_count: int
         "name": row.get("name"),
         "uu_price": str(uu_price) if uu_price is not None else None,
         "steam_price": str(steam_price) if steam_price is not None else None,
+        "steam_median_price": str(steam_price) if steam_price is not None else None,
+        "steam_lowest_price": row.get("steam_lowest_price"),
+        "steam_lowest_sell_price": row.get("steam_lowest_sell_price"),
+        "steam_highest_buy_price": row.get("steam_highest_buy_price"),
+        "steam_lowest_sell_price_usd": row.get("steam_lowest_sell_price_usd"),
+        "steam_highest_buy_price_usd": row.get("steam_highest_buy_price_usd"),
+        "steam_orderbook_currency": row.get("steam_orderbook_currency"),
+        "steam_orderbook_fx_rate": row.get("steam_orderbook_fx_rate"),
+        "steam_volume": row.get("steam_volume"),
+        "steam_sell_order_count": row.get("steam_sell_order_count"),
+        "steam_buy_order_count": row.get("steam_buy_order_count"),
         "steam_net_after_fee": str(steam_net.quantize(Decimal("0.0001"))) if steam_net is not None else None,
         "balance_discount": str(balance_discount.quantize(Decimal("0.01"))) if balance_discount is not None else None,
         "conservative_steam_net_after_fee": (
@@ -201,7 +254,6 @@ def risk_profile(
     kind: str,
     uu_price: Decimal | None,
     edge: Decimal | None,
-    steam_price: Decimal | None,
     on_sale_count: int,
     min_on_sale_count: int,
     history_stats: dict[str, Any] | None = None,
@@ -229,9 +281,9 @@ def risk_profile(
         dimensions["price"]["notes"].append("thin edge")
     elif edge > Decimal("0.35"):
         penalty += Decimal("0.03")
-        notes.append("wide edge may reflect stale Steam price")
+        notes.append("wide edge")
         dimensions["data"]["level"] = max_level(dimensions["data"]["level"], "medium")
-        dimensions["data"]["notes"].append("wide edge may reflect stale Steam price")
+        dimensions["data"]["notes"].append("wide edge")
 
     if on_sale_count < min_on_sale_count:
         penalty += Decimal("0.08")
@@ -261,78 +313,59 @@ def risk_profile(
         volatility_30d = money(history_stats.get("volatility_30d"))
         worst_change_7d = money(history_stats.get("worst_change_7d"))
         change_7d = money(history_stats.get("change_7d"))
-        history_last_price = money(history_stats.get("last_price"))
         volume_24h = int(history_stats.get("volume_24h") or 0)
-        history_age_hours = age_hours(history_stats.get("history_generated_at"))
-        if history_age_hours is not None and history_age_hours > Decimal("36"):
-            penalty += Decimal("0.04")
-            notes.append("history cache is stale")
-            dimensions["data"]["level"] = max_level(dimensions["data"]["level"], "medium")
-            dimensions["data"]["notes"].append("history cache is stale")
-        if steam_price is not None and history_last_price is not None and history_last_price > 0:
-            price_gap = abs(steam_price - history_last_price) / history_last_price
-            if price_gap >= Decimal("0.15"):
-                penalty += Decimal("0.08")
-                notes.append("steam reference price mismatch")
-                dimensions["data"]["level"] = "high"
-                dimensions["data"]["notes"].append("steam reference price mismatch")
-            elif price_gap >= Decimal("0.08"):
-                penalty += Decimal("0.04")
-                notes.append("steam reference price drift")
-                dimensions["data"]["level"] = max_level(dimensions["data"]["level"], "medium")
-                dimensions["data"]["notes"].append("steam reference price drift")
         if volatility_7d is not None:
             if volatility_7d >= Decimal("0.20"):
-                penalty += Decimal("0.08")
+                penalty += Decimal("0.04")
                 notes.append("high 7d volatility")
                 dimensions["cooldown"]["level"] = "high"
                 dimensions["cooldown"]["notes"].append("high 7d volatility")
             elif volatility_7d >= Decimal("0.10"):
-                penalty += Decimal("0.04")
+                penalty += Decimal("0.02")
                 notes.append("moderate 7d volatility")
                 dimensions["cooldown"]["level"] = max_level(dimensions["cooldown"]["level"], "medium")
                 dimensions["cooldown"]["notes"].append("moderate 7d volatility")
         if volatility_30d is not None and volatility_7d is not None and volatility_7d > volatility_30d * Decimal("1.4"):
-            penalty += Decimal("0.02")
+            penalty += Decimal("0.01")
             notes.append("recent momentum spike")
             dimensions["cooldown"]["level"] = max_level(dimensions["cooldown"]["level"], "medium")
             dimensions["cooldown"]["notes"].append("recent momentum spike")
         if worst_change_7d is not None and worst_change_7d <= Decimal("-0.12"):
-            penalty += Decimal("0.06")
+            penalty += Decimal("0.02")
             notes.append("large historical 7d drawdown")
-            dimensions["cooldown"]["level"] = "high"
+            dimensions["cooldown"]["level"] = max_level(dimensions["cooldown"]["level"], "medium")
             dimensions["cooldown"]["notes"].append("large historical 7d drawdown")
         elif worst_change_7d is not None and worst_change_7d <= Decimal("-0.06"):
-            penalty += Decimal("0.03")
+            penalty += Decimal("0.01")
             notes.append("moderate historical 7d drawdown")
             dimensions["cooldown"]["level"] = max_level(dimensions["cooldown"]["level"], "medium")
             dimensions["cooldown"]["notes"].append("moderate historical 7d drawdown")
         if change_7d is not None and change_7d <= Decimal("-0.08"):
-            penalty += Decimal("0.03")
+            penalty += Decimal("0.01")
             notes.append("recent 7d downtrend")
             dimensions["price"]["level"] = max_level(dimensions["price"]["level"], "medium")
             dimensions["price"]["notes"].append("recent 7d downtrend")
         if volume_24h and volume_24h < 25:
-            penalty += Decimal("0.04")
+            penalty += Decimal("0.02")
             notes.append("thin 24h volume")
             dimensions["liquidity"]["level"] = max_level(dimensions["liquidity"]["level"], "medium")
             dimensions["liquidity"]["notes"].append("thin 24h volume")
 
     if conservative_discount is not None:
         if conservative_discount >= Decimal("9.30"):
-            penalty += Decimal("0.08")
+            penalty += Decimal("0.01")
             notes.append("conservative discount too thin")
-            dimensions["cooldown"]["level"] = "high"
+            dimensions["cooldown"]["level"] = max_level(dimensions["cooldown"]["level"], "medium")
             dimensions["cooldown"]["notes"].append("conservative discount too thin")
         elif conservative_discount >= Decimal("8.50"):
-            penalty += Decimal("0.04")
+            penalty += Decimal("0.005")
             notes.append("conservative discount is thin")
             dimensions["cooldown"]["level"] = max_level(dimensions["cooldown"]["level"], "medium")
             dimensions["cooldown"]["notes"].append("conservative discount is thin")
 
-    if penalty >= Decimal("0.12"):
+    if penalty >= Decimal("0.18"):
         level = "high"
-    elif penalty >= Decimal("0.06"):
+    elif penalty >= Decimal("0.08"):
         level = "medium"
     else:
         level = "low"
@@ -348,44 +381,6 @@ def risk_profile(
 def max_level(current: str, candidate: str) -> str:
     order = {"low": 0, "medium": 1, "high": 2}
     return candidate if order.get(candidate, 0) > order.get(current, 0) else current
-
-
-def age_hours(value: Any) -> Decimal | None:
-    if not value:
-        return None
-    try:
-        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    seconds = (datetime.now(timezone.utc) - dt.astimezone(timezone.utc)).total_seconds()
-    return Decimal(str(seconds / 3600))
-
-
-def load_history_cache(path: Path) -> dict[str, dict[str, Any]]:
-    if not path.exists():
-        return {}
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    history_generated_at = payload.get("generated_at") if isinstance(payload, dict) else None
-    rows = payload.get("items", []) if isinstance(payload, dict) else payload if isinstance(payload, list) else []
-    history: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        key = str(row.get("hash_name") or row.get("query") or "").strip().lower()
-        if not key:
-            continue
-        history[key] = {
-            "volatility_7d": row.get("volatility_7d"),
-            "volatility_30d": row.get("volatility_30d"),
-            "change_7d": row.get("change_7d"),
-            "worst_change_7d": row.get("worst_change_7d"),
-            "volume_24h": row.get("volume_24h"),
-            "last_price": row.get("last_price"),
-            "history_generated_at": history_generated_at,
-        }
-    return history
 
 
 def ensure_history_schema(connection: Any) -> None:
@@ -471,7 +466,6 @@ def run_radar() -> dict[str, Any]:
     config = load_config()
     headers = build_headers()
     watchlist = load_watchlist(config.watchlist_file, config.limit)
-    history_cache = load_history_cache(config.history_cache_file)
     candidates = []
     notifications = []
     errors = []
@@ -493,9 +487,7 @@ def run_radar() -> dict[str, Any]:
                 rows = query_sale_template(headers, query, config.page_size)
                 exact = choose_exact(query, rows)
                 if exact is not None:
-                    history_stats = history_cache.get(str((exact.get("hash_name") or query)).lower())
-                    if history_stats:
-                        exact["history_stats"] = history_stats
+                    exact = enrich_with_steam(exact, config)
                     candidate = score_row(watch, exact, config.min_on_sale_count)
                     edge = money(candidate.get("edge"))
                     if edge is not None and edge >= config.min_edge:
@@ -513,12 +505,12 @@ def run_radar() -> dict[str, Any]:
         output = {
             "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "watchlist_checked": len(watchlist),
-        "candidate_count": len(candidates),
-        "notification_count": len(notifications),
-        "history_cache_loaded": bool(history_cache),
-        "min_edge": str(config.min_edge),
-        "candidates": candidates,
-        "notifications": notifications,
+            "candidate_count": len(candidates),
+            "notification_count": len(notifications),
+            "steam_cache_file": str(config.steam_market_cache_file),
+            "min_edge": str(config.min_edge),
+            "candidates": candidates,
+            "notifications": notifications,
             "errors": errors,
         }
         config.output_file.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -114,44 +114,32 @@ After a candidate is pushed, the same item is suppressed for the cooldown
 window. It can be pushed early again if its edge improves by at least the
 configured delta.
 
-Optional Steam history cache:
+Optional Steam market cache:
 
 ```text
-UU_HISTORY_CACHE_FILE=D:/Codex/uu-market-crawler/steam_history_cache.json
+STEAM_MARKET_CACHE_FILE=D:/Codex/uu-market-crawler/steam_market_cache.json
 ```
 
-Expected shape:
+The radar now gets Steam-side price data directly from Steam Community Market:
 
-```json
-{
-  "items": [
-    {
-      "hash_name": "Recoil Case",
-      "volatility_7d": "0.08",
-      "volatility_30d": "0.12",
-      "volume_24h": 12000,
-      "last_price": "3.77"
-    }
-  ]
-}
+- `priceoverview` provides current median price and volume.
+- the listing page provides sell/buy order depth and compact order tables.
+- the listing page also provides median-price history for volatility and
+  cooldown-risk scoring.
+
+The cache avoids repeatedly hitting Steam for the same market item. Tune it with:
+
+```text
+STEAM_CACHE_TTL_SECONDS=900
+STEAM_SLEEP_MIN=1.5
+STEAM_SLEEP_MAX=3.5
+USD_CNY_RATE=7.20
 ```
 
-When this file exists, radar risk scoring adds penalties for high 7-day
-volatility, recent volatility spikes, and weak 24-hour volume.
-
-Sync Steam-side history from CS2Cap:
-
-```powershell
-$env:CS2CAP_API_KEY='...'
-$env:UU_HISTORY_CACHE_FILE='D:/Codex/uu-market-crawler/steam_history_cache.json'
-python .\cs2cap_history_sync.py
-```
-
-The sync uses CS2Cap `/v1/prices/candles` with `interval=1d`, `lookback=30d`,
-`fill=false`, and `currency=CNY` by default. Free tier rejects `fill=true`, so
-keep sparse candles enabled unless the account is upgraded. Keep
-`CS2CAP_HISTORY_LIMIT` conservative on the free tier; 30 items once per day is
-about 900 requests per month.
+Steam listing order books may render in USD even when `currency=23` is used.
+The radar converts those sell/buy order prices to CNY with `USD_CNY_RATE`.
+Current balance math uses Steam `priceoverview` median CNY price; order book
+prices are shown as depth and sanity-check context.
 
 Run the filter/tag probe instead:
 

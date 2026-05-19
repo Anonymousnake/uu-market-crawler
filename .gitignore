@@ -9,4 +9,4 @@ __pycache__/
 .pytest_cache/
 node_modules/
 radar.latest.json
-steam_history_cache*.json
+steam_market_cache*.json

@@ -73,6 +73,8 @@ UU_WRITE_CACHE=0
 UU_CACHE_DB=D:/Codex/uu-market-crawler/uu_market_cache.sqlite3
 UU_HEADERS_FILE=D:/Codex/uu-market-crawler/.secrets/uu_headers.local.json
 UU_INCLUDE_RAW_KEYS=0
+UU_API_HOST=127.0.0.1
+UU_API_PORT=8765
 ```
 
 Run with saved local headers:

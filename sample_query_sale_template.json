@@ -1,0 +1,31 @@
+{
+  "Code": 0,
+  "Msg": "success",
+  "Data": [
+    {
+      "id": 1672,
+      "isFavorite": null,
+      "gameId": 730,
+      "gameName": "CS:GO",
+      "gameIcon": "https://youpin.img898.com/logo/csgo.png",
+      "commodityName": "Moto Gloves | Transport (Field-Tested)",
+      "commodityHashName": "Moto Gloves | Transport (Field-Tested)",
+      "iconUrl": "https://youpin.img898.com/csgo/template/3fa77f48d94e48f796d42bbc1d3bc76b.png",
+      "iconUrlLarge": "https://youpin.img898.com/csgo/template/9feafd6ef9004fc09aca1a2d89178fe8.png",
+      "onSaleCount": 317,
+      "onLeaseCount": 232,
+      "leaseUnitPrice": "0.05",
+      "longLeaseUnitPrice": "0.05",
+      "leaseDeposit": "344",
+      "price": "290",
+      "steamPrice": "374.34",
+      "steamUsdPrice": "46.07",
+      "typeName": "Gloves",
+      "exterior": "Field-Tested",
+      "rarity": "Extraordinary",
+      "quality": "Star",
+      "rent": "0.05",
+      "listType": 10
+    }
+  ]
+}

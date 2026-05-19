@@ -1,0 +1,565 @@
+{
+  "generated_at": "2026-05-19T10:12:46.591Z",
+  "source": "querySaleTemplate keyWords",
+  "count": 62,
+  "items": [
+    {
+      "kind": "case",
+      "template_id": 102276,
+      "name": "反冲武器箱",
+      "hash_name": "Recoil Case",
+      "query": "Recoil Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 53453,
+      "name": "蛇噬武器箱",
+      "hash_name": "Snakebite Case",
+      "query": "Snakebite Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 168,
+      "name": "裂空武器箱",
+      "hash_name": "Fracture Case",
+      "query": "Fracture Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 108492,
+      "name": "千瓦武器箱",
+      "hash_name": "Kilowatt Case",
+      "query": "Kilowatt Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 109499,
+      "name": "画廊武器箱",
+      "hash_name": "Gallery Case",
+      "query": "Gallery Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 103158,
+      "name": "变革武器箱",
+      "hash_name": "Revolution Case",
+      "query": "Revolution Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 101422,
+      "name": "梦魇武器箱",
+      "hash_name": "Dreams & Nightmares Case",
+      "query": "Dreams & Nightmares Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 62265,
+      "name": "“激流大行动”武器箱",
+      "hash_name": "Operation Riptide Case",
+      "query": "Operation Riptide Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 6860,
+      "name": "“狂牙大行动”武器箱",
+      "hash_name": "Operation Broken Fang Case",
+      "query": "Operation Broken Fang Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 8,
+      "name": "棱彩2号武器箱",
+      "hash_name": "Prisma 2 Case",
+      "query": "Prisma 2 Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 3,
+      "name": "棱彩武器箱",
+      "hash_name": "Prisma Case",
+      "query": "Prisma Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 9,
+      "name": "反恐精英20周年武器箱",
+      "hash_name": "CS20 Case",
+      "query": "CS20 Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 12,
+      "name": "命悬一线武器箱",
+      "hash_name": "Clutch Case",
+      "query": "Clutch Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 153,
+      "name": "地平线武器箱",
+      "hash_name": "Horizon Case",
+      "query": "Horizon Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 5,
+      "name": "“头号特训”武器箱",
+      "hash_name": "Danger Zone Case",
+      "query": "Danger Zone Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 2,
+      "name": "光谱 2 号武器箱",
+      "hash_name": "Spectrum 2 Case",
+      "query": "Spectrum 2 Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 1055,
+      "name": "光谱武器箱",
+      "hash_name": "Spectrum Case",
+      "query": "Spectrum Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 77,
+      "name": "手套武器箱",
+      "hash_name": "Glove Case",
+      "query": "Glove Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 369,
+      "name": "伽玛 2 号武器箱",
+      "hash_name": "Gamma 2 Case",
+      "query": "Gamma 2 Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 358,
+      "name": "伽玛武器箱",
+      "hash_name": "Gamma Case",
+      "query": "Gamma Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 13,
+      "name": "幻彩 3 号武器箱",
+      "hash_name": "Chroma 3 Case",
+      "query": "Chroma 3 Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 788,
+      "name": "幻彩 2 号武器箱",
+      "hash_name": "Chroma 2 Case",
+      "query": "Chroma 2 Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 45444,
+      "name": "幻彩武器箱",
+      "hash_name": "Chroma Case",
+      "query": "Chroma Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 782,
+      "name": "“野火大行动”武器箱",
+      "hash_name": "Operation Wildfire Case",
+      "query": "Operation Wildfire Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 38,
+      "name": "左轮武器箱",
+      "hash_name": "Revolver Case",
+      "query": "Revolver Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 368,
+      "name": "暗影武器箱",
+      "hash_name": "Shadow Case",
+      "query": "Shadow Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 125,
+      "name": "弯曲猎手武器箱",
+      "hash_name": "Falchion Case",
+      "query": "Falchion Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 1177,
+      "name": "“先锋大行动”武器箱",
+      "hash_name": "Operation Vanguard Weapon Case",
+      "query": "Operation Vanguard Weapon Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 156,
+      "name": "“突围大行动”武器箱",
+      "hash_name": "Operation Breakout Weapon Case",
+      "query": "Operation Breakout Weapon Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 46475,
+      "name": "猎杀者武器箱",
+      "hash_name": "Huntsman Weapon Case",
+      "query": "Huntsman Weapon Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 1176,
+      "name": "“凤凰大行动”武器箱",
+      "hash_name": "Operation Phoenix Weapon Case",
+      "query": "Operation Phoenix Weapon Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 45168,
+      "name": "冬季攻势武器箱",
+      "hash_name": "Winter Offensive Weapon Case",
+      "query": "Winter Offensive Weapon Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 57055,
+      "name": "电竞 2013 武器箱",
+      "hash_name": "eSports 2013 Case",
+      "query": "eSports 2013 Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 1118,
+      "name": "电竞 2013 冬季武器箱",
+      "hash_name": "eSports 2013 Winter Case",
+      "query": "eSports 2013 Winter Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 1117,
+      "name": "电竞 2014 夏季武器箱",
+      "hash_name": "eSports 2014 Summer Case",
+      "query": "eSports 2014 Summer Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 47128,
+      "name": "反恐精英武器箱",
+      "hash_name": "CS:GO Weapon Case",
+      "query": "CS:GO Weapon Case",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 48062,
+      "name": "反恐精英 2 号武器箱",
+      "hash_name": "CS:GO Weapon Case 2",
+      "query": "CS:GO Weapon Case 2",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "case",
+      "template_id": 46084,
+      "name": "反恐精英 3 号武器箱",
+      "hash_name": "CS:GO Weapon Case 3",
+      "query": "CS:GO Weapon Case 3",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 113248,
+      "name": "2025年布达佩斯锦标赛竞争组印花胶囊",
+      "hash_name": "Budapest 2025 Contenders Sticker Capsule",
+      "query": "Budapest 2025 Contenders Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 113246,
+      "name": "2025年布达佩斯锦标赛传奇组印花胶囊",
+      "hash_name": "Budapest 2025 Legends Sticker Capsule",
+      "query": "Budapest 2025 Legends Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 113299,
+      "name": "2025年布达佩斯锦标赛挑战组印花胶囊",
+      "hash_name": "Budapest 2025 Challengers Sticker Capsule",
+      "query": "Budapest 2025 Challengers Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 111551,
+      "name": "2025年奥斯汀锦标赛竞争组印花胶囊",
+      "hash_name": "Austin 2025 Contenders Sticker Capsule",
+      "query": "Austin 2025 Contenders Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 111569,
+      "name": "2025年奥斯汀锦标赛传奇组印花胶囊",
+      "hash_name": "Austin 2025 Legends Sticker Capsule",
+      "query": "Austin 2025 Legends Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 111568,
+      "name": "2025年奥斯汀锦标赛挑战组印花胶囊",
+      "hash_name": "Austin 2025 Challengers Sticker Capsule",
+      "query": "Austin 2025 Challengers Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 110048,
+      "name": "2024年上海锦标赛竞争组印花胶囊",
+      "hash_name": "Shanghai 2024 Contenders Sticker Capsule",
+      "query": "Shanghai 2024 Contenders Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 110058,
+      "name": "2024年上海锦标赛传奇组印花胶囊",
+      "hash_name": "Shanghai 2024 Legends Sticker Capsule",
+      "query": "Shanghai 2024 Legends Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 110166,
+      "name": "2024年上海锦标赛挑战组印花胶囊",
+      "hash_name": "Shanghai 2024 Challengers Sticker Capsule",
+      "query": "Shanghai 2024 Challengers Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 108843,
+      "name": "2024年哥本哈根锦标赛竞争组印花胶囊",
+      "hash_name": "Copenhagen 2024 Contenders Sticker Capsule",
+      "query": "Copenhagen 2024 Contenders Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 108869,
+      "name": "2024年哥本哈根锦标赛传奇组印花胶囊",
+      "hash_name": "Copenhagen 2024 Legends Sticker Capsule",
+      "query": "Copenhagen 2024 Legends Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 109082,
+      "name": "2024年哥本哈根锦标赛挑战组印花胶囊",
+      "hash_name": "Copenhagen 2024 Challengers Sticker Capsule",
+      "query": "Copenhagen 2024 Challengers Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 103605,
+      "name": "2023年巴黎锦标赛竞争组印花胶囊",
+      "hash_name": "Paris 2023 Contenders Sticker Capsule",
+      "query": "Paris 2023 Contenders Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 103609,
+      "name": "2023年巴黎锦标赛传奇组印花胶囊",
+      "hash_name": "Paris 2023 Legends Sticker Capsule",
+      "query": "Paris 2023 Legends Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 103619,
+      "name": "2023年巴黎锦标赛挑战组印花胶囊",
+      "hash_name": "Paris 2023 Challengers Sticker Capsule",
+      "query": "Paris 2023 Challengers Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 102770,
+      "name": "2022年里约热内卢锦标赛竞争组印花胶囊",
+      "hash_name": "Rio 2022 Contenders Sticker Capsule",
+      "query": "Rio 2022 Contenders Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 102676,
+      "name": "2022年里约热内卢锦标赛传奇组印花胶囊",
+      "hash_name": "Rio 2022 Legends Sticker Capsule",
+      "query": "Rio 2022 Legends Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 102715,
+      "name": "2022年里约热内卢锦标赛挑战组印花胶囊",
+      "hash_name": "Rio 2022 Challengers Sticker Capsule",
+      "query": "Rio 2022 Challengers Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 101804,
+      "name": "2022年安特卫普锦标赛竞争组印花胶囊",
+      "hash_name": "Antwerp 2022 Contenders Sticker Capsule",
+      "query": "Antwerp 2022 Contenders Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 101717,
+      "name": "2022年安特卫普锦标赛传奇组印花胶囊",
+      "hash_name": "Antwerp 2022 Legends Sticker Capsule",
+      "query": "Antwerp 2022 Legends Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 101771,
+      "name": "2022年安特卫普锦标赛挑战组印花胶囊",
+      "hash_name": "Antwerp 2022 Challengers Sticker Capsule",
+      "query": "Antwerp 2022 Challengers Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 101046,
+      "name": "2021年斯德哥尔摩锦标赛竞争组印花胶囊",
+      "hash_name": "Stockholm 2021 Contenders Sticker Capsule",
+      "query": "Stockholm 2021 Contenders Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 101041,
+      "name": "2021年斯德哥尔摩锦标赛传奇组印花胶囊",
+      "hash_name": "Stockholm 2021 Legends Sticker Capsule",
+      "query": "Stockholm 2021 Legends Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    },
+    {
+      "kind": "capsule",
+      "template_id": 101040,
+      "name": "2021年斯德哥尔摩锦标赛挑战组印花胶囊",
+      "hash_name": "Stockholm 2021 Challengers Sticker Capsule",
+      "query": "Stockholm 2021 Challengers Sticker Capsule",
+      "game_id": 730,
+      "list_type": 10
+    }
+  ]
+}

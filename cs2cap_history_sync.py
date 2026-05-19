@@ -24,6 +24,8 @@ class Config:
     output_file: Path
     limit: int
     currency: str
+    lookback: str
+    fill: str
     sleep_min: float
     sleep_max: float
 
@@ -42,6 +44,8 @@ def load_config() -> Config:
         output_file=Path(env("UU_HISTORY_CACHE_FILE", str(DEFAULT_OUTPUT))),
         limit=max(1, int(env("CS2CAP_HISTORY_LIMIT", "30"))),
         currency=env("CS2CAP_CURRENCY", "CNY"),
+        lookback=env("CS2CAP_LOOKBACK", "30d"),
+        fill=env("CS2CAP_FILL", "false"),
         sleep_min=float(env("CS2CAP_SLEEP_MIN", "1.5")),
         sleep_max=float(env("CS2CAP_SLEEP_MAX", "3.5")),
     )
@@ -55,19 +59,9 @@ def load_watchlist(path: Path, limit: int) -> list[dict[str, Any]]:
     return [row for row in rows if isinstance(row, dict) and row.get("query")][:limit]
 
 
-def load_existing(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {"items": []}
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        return {"items": []}
-    payload.setdefault("items", [])
-    return payload
-
-
-def request_current_price(config: Config, market_hash_name: str) -> dict[str, Any]:
+def request_candles(config: Config, market_hash_name: str) -> dict[str, Any]:
     response = requests.get(
-        f"{API_BASE}/prices",
+        f"{API_BASE}/prices/candles",
         headers={
             "Authorization": f"Bearer {config.api_key}",
             "Accept": "application/json",
@@ -75,9 +69,10 @@ def request_current_price(config: Config, market_hash_name: str) -> dict[str, An
         },
         params={
             "market_hash_name": market_hash_name,
-            "providers": "steam",
+            "lookback": config.lookback,
+            "interval": "1d",
+            "fill": config.fill,
             "currency": config.currency,
-            "limit": "1",
         },
         timeout=30,
     )
@@ -106,57 +101,31 @@ def volatility(values: list[Decimal]) -> Decimal | None:
     return Decimal(str(statistics.pstdev([float(item) for item in changes])))
 
 
-def item_map(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    mapped = {}
-    for row in payload.get("items", []):
-        if not isinstance(row, dict):
-            continue
-        key = str(row.get("hash_name") or "").lower()
-        if key:
-            mapped[key] = row
-    return mapped
-
-
-def normalize_current(market_hash_name: str, body: dict[str, Any]) -> dict[str, Any]:
-    rows = body.get("items") or []
-    row = rows[0] if rows else {}
-    price = price_from_minor_units(row.get("lowest_ask"))
-    quantity = row.get("quantity")
-    return {
-        "hash_name": market_hash_name,
-        "price": str(price.quantize(Decimal("0.01"))) if price is not None else None,
-        "quantity": int(quantity or 0),
-        "timestamp": row.get("timestamp") or row.get("last_updated"),
-    }
-
-
-def summarize_history(row: dict[str, Any]) -> dict[str, Any]:
-    snapshots = row.get("snapshots", [])
-    values = []
-    for snap in snapshots[-30:]:
-        price = snap.get("price") if isinstance(snap, dict) else None
-        if price is not None:
-            values.append(Decimal(str(price)))
+def summarize_candles(market_hash_name: str, body: dict[str, Any]) -> dict[str, Any]:
+    candles = [row for row in body.get("data", []) if isinstance(row, dict)]
+    values = [price_from_minor_units(row.get("c")) for row in candles]
+    values = [value for value in values if value is not None]
     vol_7d = volatility(values[-8:])
     vol_30d = volatility(values)
-    last = snapshots[-1] if snapshots else {}
+    last = candles[-1] if candles else {}
+    last_price = values[-1] if values else None
+    volume_24h = int(last.get("v") or 0) if isinstance(last, dict) else 0
+    listing_count = int(last.get("q") or 0) if isinstance(last, dict) and last.get("q") is not None else None
     return {
-        "hash_name": row.get("hash_name"),
+        "hash_name": market_hash_name,
         "volatility_7d": str(vol_7d.quantize(Decimal("0.0001"))) if vol_7d is not None else None,
         "volatility_30d": str(vol_30d.quantize(Decimal("0.0001"))) if vol_30d is not None else None,
-        "volume_24h": last.get("quantity", 0),
-        "listing_count": last.get("quantity", 0),
-        "last_price": last.get("price"),
+        "volume_24h": volume_24h,
+        "listing_count": listing_count,
+        "last_price": str(last_price.quantize(Decimal("0.01"))) if last_price is not None else None,
         "sample_count": len(values),
-        "snapshots": snapshots[-30:],
     }
 
 
 def run() -> dict[str, Any]:
     config = load_config()
-    existing = load_existing(config.output_file)
-    mapped = item_map(existing)
     rows = load_watchlist(config.watchlist_file, config.limit)
+    items = []
     errors = []
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
@@ -165,29 +134,18 @@ def run() -> dict[str, Any]:
             time.sleep(random.uniform(config.sleep_min, config.sleep_max))
         query = str(row.get("query"))
         try:
-            current = normalize_current(query, request_current_price(config, query))
-            target = mapped.setdefault(query.lower(), {"hash_name": query, "snapshots": []})
-            snapshots = target.setdefault("snapshots", [])
-            if current["price"] is not None:
-                snapshots.append(
-                    {
-                        "fetched_at": now,
-                        "price": current["price"],
-                        "quantity": current["quantity"],
-                        "source_timestamp": current["timestamp"],
-                    }
-                )
-                target["snapshots"] = snapshots[-30:]
+            items.append(summarize_candles(query, request_candles(config, query)))
         except Exception as exc:  # noqa: BLE001 - collect per-item failures for cron.
             errors.append({"hash_name": query, "error": str(exc)})
             if "429" in str(exc):
                 break
 
-    items = [summarize_history(row) for row in mapped.values()]
     output = {
         "generated_at": now,
-        "source": "cs2cap:/v1/prices daily snapshots",
+        "source": "cs2cap:/v1/prices/candles",
         "currency": config.currency,
+        "lookback": config.lookback,
+        "fill": config.fill,
         "count": len(items),
         "items": sorted(items, key=lambda item: str(item.get("hash_name") or "")),
         "errors": errors,

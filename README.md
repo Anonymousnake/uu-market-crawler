@@ -147,9 +147,11 @@ $env:UU_HISTORY_CACHE_FILE='D:/Codex/uu-market-crawler/steam_history_cache.json'
 python .\cs2cap_history_sync.py
 ```
 
-The sync uses CS2Cap `/v1/prices` with `providers=steam` and `currency=CNY`,
-then builds local daily snapshots. Keep `CS2CAP_HISTORY_LIMIT` conservative on
-the free tier; 30 items once per day is about 900 requests per month.
+The sync uses CS2Cap `/v1/prices/candles` with `interval=1d`, `lookback=30d`,
+`fill=false`, and `currency=CNY` by default. Free tier rejects `fill=true`, so
+keep sparse candles enabled unless the account is upgraded. Keep
+`CS2CAP_HISTORY_LIMIT` conservative on the free tier; 30 items once per day is
+about 900 requests per month.
 
 Run the filter/tag probe instead:
 

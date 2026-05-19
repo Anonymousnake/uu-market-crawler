@@ -39,6 +39,7 @@ class RadarConfig:
     page_size: int
     sleep_min: Decimal
     sleep_max: Decimal
+    history_cache_file: Path
 
 
 def env(name: str, default: str = "") -> str:
@@ -73,6 +74,7 @@ def load_config() -> RadarConfig:
         page_size=int_env("UU_PAGE_SIZE", "20"),
         sleep_min=decimal_env("UU_SLEEP_MIN", "2.5"),
         sleep_max=decimal_env("UU_SLEEP_MAX", "6.0"),
+        history_cache_file=Path(env("UU_HISTORY_CACHE_FILE", str(Path(__file__).with_name("steam_history_cache.json")))),
     )
 
 
@@ -138,6 +140,7 @@ def score_row(watch: dict[str, Any], row: dict[str, Any], min_on_sale_count: int
         edge=edge,
         on_sale_count=on_sale_count,
         min_on_sale_count=min_on_sale_count,
+        history_stats=row.get("history_stats"),
     )
     risk_penalty = Decimal(risk["risk_penalty"])
     score = edge - liquidity_penalty - risk_penalty if edge is not None else None
@@ -167,6 +170,7 @@ def risk_profile(
     edge: Decimal | None,
     on_sale_count: int,
     min_on_sale_count: int,
+    history_stats: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     penalty = Decimal("0")
     notes = []
@@ -196,6 +200,24 @@ def risk_profile(
         penalty += Decimal("0.02")
         notes.append("capsule event-cycle risk")
 
+    if isinstance(history_stats, dict):
+        volatility_7d = money(history_stats.get("volatility_7d"))
+        volatility_30d = money(history_stats.get("volatility_30d"))
+        volume_24h = int(history_stats.get("volume_24h") or 0)
+        if volatility_7d is not None:
+            if volatility_7d >= Decimal("0.20"):
+                penalty += Decimal("0.08")
+                notes.append("high 7d volatility")
+            elif volatility_7d >= Decimal("0.10"):
+                penalty += Decimal("0.04")
+                notes.append("moderate 7d volatility")
+        if volatility_30d is not None and volatility_7d is not None and volatility_7d > volatility_30d * Decimal("1.4"):
+            penalty += Decimal("0.02")
+            notes.append("recent momentum spike")
+        if volume_24h and volume_24h < 25:
+            penalty += Decimal("0.04")
+            notes.append("thin 24h volume")
+
     if penalty >= Decimal("0.12"):
         level = "high"
     elif penalty >= Decimal("0.06"):
@@ -208,6 +230,27 @@ def risk_profile(
         "risk_penalty": str(penalty.quantize(Decimal("0.0001"))),
         "risk_notes": notes,
     }
+
+
+def load_history_cache(path: Path) -> dict[str, dict[str, Any]]:
+    if not path.exists():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    rows = payload.get("items", payload if isinstance(payload, list) else [])
+    history: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        key = str(row.get("hash_name") or row.get("query") or "").strip().lower()
+        if not key:
+            continue
+        history[key] = {
+            "volatility_7d": row.get("volatility_7d"),
+            "volatility_30d": row.get("volatility_30d"),
+            "volume_24h": row.get("volume_24h"),
+            "last_price": row.get("last_price"),
+        }
+    return history
 
 
 def ensure_history_schema(connection: Any) -> None:
@@ -293,6 +336,7 @@ def run_radar() -> dict[str, Any]:
     config = load_config()
     headers = build_headers()
     watchlist = load_watchlist(config.watchlist_file, config.limit)
+    history_cache = load_history_cache(config.history_cache_file)
     candidates = []
     notifications = []
     errors = []
@@ -314,6 +358,9 @@ def run_radar() -> dict[str, Any]:
                 rows = query_sale_template(headers, query, config.page_size)
                 exact = choose_exact(query, rows)
                 if exact is not None:
+                    history_stats = history_cache.get(str((exact.get("hash_name") or query)).lower())
+                    if history_stats:
+                        exact["history_stats"] = history_stats
                     candidate = score_row(watch, exact, config.min_on_sale_count)
                     edge = money(candidate.get("edge"))
                     if edge is not None and edge >= config.min_edge:
@@ -331,11 +378,12 @@ def run_radar() -> dict[str, Any]:
         output = {
             "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "watchlist_checked": len(watchlist),
-            "candidate_count": len(candidates),
-            "notification_count": len(notifications),
-            "min_edge": str(config.min_edge),
-            "candidates": candidates,
-            "notifications": notifications,
+        "candidate_count": len(candidates),
+        "notification_count": len(notifications),
+        "history_cache_loaded": bool(history_cache),
+        "min_edge": str(config.min_edge),
+        "candidates": candidates,
+        "notifications": notifications,
             "errors": errors,
         }
         config.output_file.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")

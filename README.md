@@ -114,6 +114,31 @@ After a candidate is pushed, the same item is suppressed for the cooldown
 window. It can be pushed early again if its edge improves by at least the
 configured delta.
 
+Optional Steam history cache:
+
+```text
+UU_HISTORY_CACHE_FILE=D:/Codex/uu-market-crawler/steam_history_cache.json
+```
+
+Expected shape:
+
+```json
+{
+  "items": [
+    {
+      "hash_name": "Recoil Case",
+      "volatility_7d": "0.08",
+      "volatility_30d": "0.12",
+      "volume_24h": 12000,
+      "last_price": "3.77"
+    }
+  ]
+}
+```
+
+When this file exists, radar risk scoring adds penalties for high 7-day
+volatility, recent volatility spikes, and weak 24-hour volume.
+
 Run the filter/tag probe instead:
 
 ```powershell

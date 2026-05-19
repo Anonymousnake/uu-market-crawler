@@ -132,7 +132,15 @@ def score_row(watch: dict[str, Any], row: dict[str, Any], min_on_sale_count: int
     if on_sale_count < min_on_sale_count:
         liquidity_penalty = Decimal("0.05")
 
-    score = edge - liquidity_penalty if edge is not None else None
+    risk = risk_profile(
+        kind=str(watch.get("kind") or ""),
+        uu_price=uu_price,
+        edge=edge,
+        on_sale_count=on_sale_count,
+        min_on_sale_count=min_on_sale_count,
+    )
+    risk_penalty = Decimal(risk["risk_penalty"])
+    score = edge - liquidity_penalty - risk_penalty if edge is not None else None
     return {
         "kind": watch.get("kind"),
         "template_id": row.get("id") or watch.get("template_id"),
@@ -147,6 +155,58 @@ def score_row(watch: dict[str, Any], row: dict[str, Any], min_on_sale_count: int
         "on_sale_count": on_sale_count,
         "score": str(score.quantize(Decimal("0.0001"))) if score is not None else None,
         "liquidity_penalty": str(liquidity_penalty),
+        "risk_level": risk["risk_level"],
+        "risk_penalty": risk["risk_penalty"],
+        "risk_notes": risk["risk_notes"],
+    }
+
+
+def risk_profile(
+    kind: str,
+    uu_price: Decimal | None,
+    edge: Decimal | None,
+    on_sale_count: int,
+    min_on_sale_count: int,
+) -> dict[str, Any]:
+    penalty = Decimal("0")
+    notes = []
+
+    if edge is None:
+        penalty += Decimal("0.20")
+        notes.append("missing edge")
+    elif edge < Decimal("0.08"):
+        penalty += Decimal("0.06")
+        notes.append("thin edge")
+    elif edge > Decimal("0.35"):
+        penalty += Decimal("0.03")
+        notes.append("wide edge may reflect stale Steam price")
+
+    if on_sale_count < min_on_sale_count:
+        penalty += Decimal("0.08")
+        notes.append("low UU depth")
+    elif on_sale_count < 1000:
+        penalty += Decimal("0.04")
+        notes.append("medium UU depth")
+
+    if uu_price is not None and uu_price > Decimal("50"):
+        penalty += Decimal("0.03")
+        notes.append("higher capital lockup")
+
+    if kind == "capsule":
+        penalty += Decimal("0.02")
+        notes.append("capsule event-cycle risk")
+
+    if penalty >= Decimal("0.12"):
+        level = "high"
+    elif penalty >= Decimal("0.06"):
+        level = "medium"
+    else:
+        level = "low"
+
+    return {
+        "risk_level": level,
+        "risk_penalty": str(penalty.quantize(Decimal("0.0001"))),
+        "risk_notes": notes,
     }
 
 

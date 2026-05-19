@@ -72,7 +72,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const rows = (($json.notifications && $json.notifications.length) ? $json.notifications : ($json.candidates || [])).slice(0, 10);\nconst lines = rows.map((item, index) => `${index + 1}. ${item.hash_name} | UU ${item.uu_price} | Steam到手 ${item.steam_net_after_fee} | edge ${item.edge_percent}% | 挂单 ${item.on_sale_count}`);\nconst title = ($json.notification_count && $json.notification_count > 0) ? `UU -> Steam 余额雷达（新增）` : `UU -> Steam 余额雷达`;\nreturn [{ json: { text: `${title}\\n时间: ${$json.generated_at}\\n候选: ${$json.candidate_count}\\n通知: ${$json.notification_count || 0}\\n\\n${lines.join('\\n')}` } }];"
+        "jsCode": "const rows = (($json.notifications && $json.notifications.length) ? $json.notifications : ($json.candidates || [])).slice(0, 10);\nconst riskLabel = { low: '低', medium: '中', high: '高' };\nconst lines = rows.map((item, index) => {\n  const risk = riskLabel[item.risk_level] || item.risk_level || '-';\n  const notes = (item.risk_notes || []).slice(0, 2).join(', ');\n  const noteText = notes ? ` | 风险 ${risk}(${notes})` : ` | 风险 ${risk}`;\n  return `${index + 1}. ${item.hash_name} | UU ${item.uu_price} | Steam到手 ${item.steam_net_after_fee} | edge ${item.edge_percent}% | 挂单 ${item.on_sale_count}${noteText}`;\n});\nconst title = ($json.notification_count && $json.notification_count > 0) ? `UU -> Steam 余额雷达（新增）` : `UU -> Steam 余额雷达`;\nreturn [{ json: { text: `${title}\\n时间: ${$json.generated_at}\\n候选: ${$json.candidate_count}\\n通知: ${$json.notification_count || 0}\\n\\n${lines.join('\\n')}` } }];"
       },
       "id": "format-message",
       "name": "Format Message",

@@ -1,7 +1,7 @@
 {
   "id": "uu-market-radar",
   "name": "UU Market Radar",
-  "active": false,
+  "active": true,
   "nodes": [
     {
       "parameters": {
@@ -72,7 +72,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const rows = $json.candidates || [];\nconst lines = rows.slice(0, 8).map((item, index) => {\n  return `${index + 1}. ${item.hash_name} | UU ${item.uu_price} | Steam到手 ${item.steam_net_after_fee} | edge ${item.edge_percent}% | 挂单 ${item.on_sale_count}`;\n});\nreturn [{ json: { text: `UU -> Steam 余额雷达\\n时间: ${$json.generated_at}\\n候选: ${$json.candidate_count}\\n\\n${lines.join('\\n')}` } }];"
+        "jsCode": "const rows = ($json.candidates || []).slice(0, 5);\nconst lines = rows.map((item, index) => `${index + 1}. ${item.hash_name} | UU ${item.uu_price} | Steam?? ${item.steam_net_after_fee} | edge ${item.edge_percent}% | ?? ${item.on_sale_count}`);\nreturn [{ json: { text: `UU -> Steam ????\\n??: ${$json.generated_at}\\n??: ${$json.candidate_count}\\n\\n${lines.join('\\n')}` } }];"
       },
       "id": "format-message",
       "name": "Format Message",
@@ -85,15 +85,68 @@
     },
     {
       "parameters": {
-        "content": "={{$json.text}}"
+        "method": "POST",
+        "url": "http://host.docker.internal:6185/api/v1/im/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+              {
+                "name": "X-API-Key",
+                "value": "={{$env.ASTRBOT_API_KEY}}"
+              },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParametersJson": "={{JSON.stringify({umo:'napcat_onebot_v11:GroupMessage:951944306', message:$json.text})}}",
+        "options": {
+          "timeout": 900000
+        }
       },
-      "id": "notify-placeholder",
-      "name": "Notify Placeholder",
-      "type": "n8n-nodes-base.noOp",
-      "typeVersion": 1,
+      "id": "send-astrbot-951944306",
+      "name": "Send to AstrBot 951944306",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
-        960,
-        -100
+        1200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:6185/api/v1/im/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+              {
+                "name": "X-API-Key",
+                "value": "={{$env.ASTRBOT_API_KEY}}"
+              },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParametersJson": "={{JSON.stringify({umo:'napcat_onebot_v11:GroupMessage:716934519', message:$json.text})}}",
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "id": "send-astrbot-716934519",
+      "name": "Send to AstrBot 716934519",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        -120
       ]
     }
   ],
@@ -136,11 +189,27 @@
       "main": [
         [
           {
-            "node": "Notify Placeholder",
+            "node": "Send to AstrBot 716934519",
             "type": "main",
             "index": 0
           }
         ]
+      ]
+    },
+    "Send to AstrBot 716934519": {
+      "main": [
+        [
+          {
+            "node": "Send to AstrBot 951944306",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to AstrBot 951944306": {
+      "main": [
+        []
       ]
     }
   },

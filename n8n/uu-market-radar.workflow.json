@@ -1,5 +1,7 @@
 {
+  "id": "uu-market-radar",
   "name": "UU Market Radar",
+  "active": false,
   "nodes": [
     {
       "parameters": {

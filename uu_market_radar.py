@@ -5,6 +5,7 @@ import sqlite3
 import sys
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -129,6 +130,13 @@ def score_row(watch: dict[str, Any], row: dict[str, Any], min_on_sale_count: int
     on_sale_count = int(row.get("on_sale_count") or 0)
     steam_net = steam_price / STEAM_FEE_DIVISOR if steam_price is not None else None
     edge = (steam_net - uu_price) / uu_price if steam_net is not None and uu_price else None
+    balance_discount = uu_price / steam_net * Decimal("10") if steam_net is not None and uu_price else None
+    conservative_steam_net = conservative_net_after_cooldown(steam_net, row.get("history_stats"))
+    conservative_discount = (
+        uu_price / conservative_steam_net * Decimal("10")
+        if conservative_steam_net is not None and uu_price
+        else None
+    )
 
     liquidity_penalty = Decimal("0")
     if on_sale_count < min_on_sale_count:
@@ -138,9 +146,11 @@ def score_row(watch: dict[str, Any], row: dict[str, Any], min_on_sale_count: int
         kind=str(watch.get("kind") or ""),
         uu_price=uu_price,
         edge=edge,
+        steam_price=steam_price,
         on_sale_count=on_sale_count,
         min_on_sale_count=min_on_sale_count,
         history_stats=row.get("history_stats"),
+        conservative_discount=conservative_discount,
     )
     risk_penalty = Decimal(risk["risk_penalty"])
     score = edge - liquidity_penalty - risk_penalty if edge is not None else None
@@ -153,6 +163,13 @@ def score_row(watch: dict[str, Any], row: dict[str, Any], min_on_sale_count: int
         "uu_price": str(uu_price) if uu_price is not None else None,
         "steam_price": str(steam_price) if steam_price is not None else None,
         "steam_net_after_fee": str(steam_net.quantize(Decimal("0.0001"))) if steam_net is not None else None,
+        "balance_discount": str(balance_discount.quantize(Decimal("0.01"))) if balance_discount is not None else None,
+        "conservative_steam_net_after_fee": (
+            str(conservative_steam_net.quantize(Decimal("0.0001"))) if conservative_steam_net is not None else None
+        ),
+        "conservative_balance_discount": (
+            str(conservative_discount.quantize(Decimal("0.01"))) if conservative_discount is not None else None
+        ),
         "edge": str(edge.quantize(Decimal("0.0001"))) if edge is not None else None,
         "edge_percent": str((edge * Decimal("100")).quantize(Decimal("0.01"))) if edge is not None else None,
         "on_sale_count": on_sale_count,
@@ -161,62 +178,157 @@ def score_row(watch: dict[str, Any], row: dict[str, Any], min_on_sale_count: int
         "risk_level": risk["risk_level"],
         "risk_penalty": risk["risk_penalty"],
         "risk_notes": risk["risk_notes"],
+        "risk_dimensions": risk["risk_dimensions"],
     }
+
+
+def conservative_net_after_cooldown(
+    steam_net: Decimal | None,
+    history_stats: dict[str, Any] | None,
+) -> Decimal | None:
+    if steam_net is None or not isinstance(history_stats, dict):
+        return None
+    worst_change_7d = money(history_stats.get("worst_change_7d"))
+    volatility_7d = money(history_stats.get("volatility_7d"))
+    if worst_change_7d is not None and worst_change_7d < 0:
+        return steam_net * (Decimal("1") + worst_change_7d)
+    if volatility_7d is not None:
+        return steam_net * max(Decimal("0.50"), Decimal("1") - volatility_7d * Decimal("2"))
+    return None
 
 
 def risk_profile(
     kind: str,
     uu_price: Decimal | None,
     edge: Decimal | None,
+    steam_price: Decimal | None,
     on_sale_count: int,
     min_on_sale_count: int,
     history_stats: dict[str, Any] | None = None,
+    conservative_discount: Decimal | None = None,
 ) -> dict[str, Any]:
     penalty = Decimal("0")
     notes = []
+    dimensions = {
+        "price": {"level": "low", "notes": []},
+        "liquidity": {"level": "low", "notes": []},
+        "cooldown": {"level": "low", "notes": []},
+        "data": {"level": "low", "notes": []},
+        "capital": {"level": "low", "notes": []},
+    }
 
     if edge is None:
         penalty += Decimal("0.20")
         notes.append("missing edge")
+        dimensions["data"]["level"] = "high"
+        dimensions["data"]["notes"].append("missing edge")
     elif edge < Decimal("0.08"):
         penalty += Decimal("0.06")
         notes.append("thin edge")
+        dimensions["price"]["level"] = "medium"
+        dimensions["price"]["notes"].append("thin edge")
     elif edge > Decimal("0.35"):
         penalty += Decimal("0.03")
         notes.append("wide edge may reflect stale Steam price")
+        dimensions["data"]["level"] = max_level(dimensions["data"]["level"], "medium")
+        dimensions["data"]["notes"].append("wide edge may reflect stale Steam price")
 
     if on_sale_count < min_on_sale_count:
         penalty += Decimal("0.08")
         notes.append("low UU depth")
+        dimensions["liquidity"]["level"] = "high"
+        dimensions["liquidity"]["notes"].append("low UU depth")
     elif on_sale_count < 1000:
         penalty += Decimal("0.04")
         notes.append("medium UU depth")
+        dimensions["liquidity"]["level"] = "medium"
+        dimensions["liquidity"]["notes"].append("medium UU depth")
 
     if uu_price is not None and uu_price > Decimal("50"):
         penalty += Decimal("0.03")
         notes.append("higher capital lockup")
+        dimensions["capital"]["level"] = "medium"
+        dimensions["capital"]["notes"].append("higher capital lockup")
 
     if kind == "capsule":
         penalty += Decimal("0.02")
         notes.append("capsule event-cycle risk")
+        dimensions["cooldown"]["level"] = max_level(dimensions["cooldown"]["level"], "medium")
+        dimensions["cooldown"]["notes"].append("capsule event-cycle risk")
 
     if isinstance(history_stats, dict):
         volatility_7d = money(history_stats.get("volatility_7d"))
         volatility_30d = money(history_stats.get("volatility_30d"))
+        worst_change_7d = money(history_stats.get("worst_change_7d"))
+        change_7d = money(history_stats.get("change_7d"))
+        history_last_price = money(history_stats.get("last_price"))
         volume_24h = int(history_stats.get("volume_24h") or 0)
+        history_age_hours = age_hours(history_stats.get("history_generated_at"))
+        if history_age_hours is not None and history_age_hours > Decimal("36"):
+            penalty += Decimal("0.04")
+            notes.append("history cache is stale")
+            dimensions["data"]["level"] = max_level(dimensions["data"]["level"], "medium")
+            dimensions["data"]["notes"].append("history cache is stale")
+        if steam_price is not None and history_last_price is not None and history_last_price > 0:
+            price_gap = abs(steam_price - history_last_price) / history_last_price
+            if price_gap >= Decimal("0.15"):
+                penalty += Decimal("0.08")
+                notes.append("steam reference price mismatch")
+                dimensions["data"]["level"] = "high"
+                dimensions["data"]["notes"].append("steam reference price mismatch")
+            elif price_gap >= Decimal("0.08"):
+                penalty += Decimal("0.04")
+                notes.append("steam reference price drift")
+                dimensions["data"]["level"] = max_level(dimensions["data"]["level"], "medium")
+                dimensions["data"]["notes"].append("steam reference price drift")
         if volatility_7d is not None:
             if volatility_7d >= Decimal("0.20"):
                 penalty += Decimal("0.08")
                 notes.append("high 7d volatility")
+                dimensions["cooldown"]["level"] = "high"
+                dimensions["cooldown"]["notes"].append("high 7d volatility")
             elif volatility_7d >= Decimal("0.10"):
                 penalty += Decimal("0.04")
                 notes.append("moderate 7d volatility")
+                dimensions["cooldown"]["level"] = max_level(dimensions["cooldown"]["level"], "medium")
+                dimensions["cooldown"]["notes"].append("moderate 7d volatility")
         if volatility_30d is not None and volatility_7d is not None and volatility_7d > volatility_30d * Decimal("1.4"):
             penalty += Decimal("0.02")
             notes.append("recent momentum spike")
+            dimensions["cooldown"]["level"] = max_level(dimensions["cooldown"]["level"], "medium")
+            dimensions["cooldown"]["notes"].append("recent momentum spike")
+        if worst_change_7d is not None and worst_change_7d <= Decimal("-0.12"):
+            penalty += Decimal("0.06")
+            notes.append("large historical 7d drawdown")
+            dimensions["cooldown"]["level"] = "high"
+            dimensions["cooldown"]["notes"].append("large historical 7d drawdown")
+        elif worst_change_7d is not None and worst_change_7d <= Decimal("-0.06"):
+            penalty += Decimal("0.03")
+            notes.append("moderate historical 7d drawdown")
+            dimensions["cooldown"]["level"] = max_level(dimensions["cooldown"]["level"], "medium")
+            dimensions["cooldown"]["notes"].append("moderate historical 7d drawdown")
+        if change_7d is not None and change_7d <= Decimal("-0.08"):
+            penalty += Decimal("0.03")
+            notes.append("recent 7d downtrend")
+            dimensions["price"]["level"] = max_level(dimensions["price"]["level"], "medium")
+            dimensions["price"]["notes"].append("recent 7d downtrend")
         if volume_24h and volume_24h < 25:
             penalty += Decimal("0.04")
             notes.append("thin 24h volume")
+            dimensions["liquidity"]["level"] = max_level(dimensions["liquidity"]["level"], "medium")
+            dimensions["liquidity"]["notes"].append("thin 24h volume")
+
+    if conservative_discount is not None:
+        if conservative_discount >= Decimal("9.30"):
+            penalty += Decimal("0.08")
+            notes.append("conservative discount too thin")
+            dimensions["cooldown"]["level"] = "high"
+            dimensions["cooldown"]["notes"].append("conservative discount too thin")
+        elif conservative_discount >= Decimal("8.50"):
+            penalty += Decimal("0.04")
+            notes.append("conservative discount is thin")
+            dimensions["cooldown"]["level"] = max_level(dimensions["cooldown"]["level"], "medium")
+            dimensions["cooldown"]["notes"].append("conservative discount is thin")
 
     if penalty >= Decimal("0.12"):
         level = "high"
@@ -229,14 +341,34 @@ def risk_profile(
         "risk_level": level,
         "risk_penalty": str(penalty.quantize(Decimal("0.0001"))),
         "risk_notes": notes,
+        "risk_dimensions": dimensions,
     }
+
+
+def max_level(current: str, candidate: str) -> str:
+    order = {"low": 0, "medium": 1, "high": 2}
+    return candidate if order.get(candidate, 0) > order.get(current, 0) else current
+
+
+def age_hours(value: Any) -> Decimal | None:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    seconds = (datetime.now(timezone.utc) - dt.astimezone(timezone.utc)).total_seconds()
+    return Decimal(str(seconds / 3600))
 
 
 def load_history_cache(path: Path) -> dict[str, dict[str, Any]]:
     if not path.exists():
         return {}
     payload = json.loads(path.read_text(encoding="utf-8"))
-    rows = payload.get("items", payload if isinstance(payload, list) else [])
+    history_generated_at = payload.get("generated_at") if isinstance(payload, dict) else None
+    rows = payload.get("items", []) if isinstance(payload, dict) else payload if isinstance(payload, list) else []
     history: dict[str, dict[str, Any]] = {}
     for row in rows:
         if not isinstance(row, dict):
@@ -247,8 +379,11 @@ def load_history_cache(path: Path) -> dict[str, dict[str, Any]]:
         history[key] = {
             "volatility_7d": row.get("volatility_7d"),
             "volatility_30d": row.get("volatility_30d"),
+            "change_7d": row.get("change_7d"),
+            "worst_change_7d": row.get("worst_change_7d"),
             "volume_24h": row.get("volume_24h"),
             "last_price": row.get("last_price"),
+            "history_generated_at": history_generated_at,
         }
     return history
 

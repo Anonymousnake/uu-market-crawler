@@ -101,12 +101,36 @@ def volatility(values: list[Decimal]) -> Decimal | None:
     return Decimal(str(statistics.pstdev([float(item) for item in changes])))
 
 
+def period_change(values: list[Decimal], days: int) -> Decimal | None:
+    if len(values) <= days:
+        return None
+    previous = values[-days - 1]
+    current = values[-1]
+    if not previous:
+        return None
+    return (current - previous) / previous
+
+
+def worst_period_change(values: list[Decimal], days: int) -> Decimal | None:
+    if len(values) <= days:
+        return None
+    changes = []
+    for start in range(0, len(values) - days):
+        previous = values[start]
+        current = values[start + days]
+        if previous:
+            changes.append((current - previous) / previous)
+    return min(changes) if changes else None
+
+
 def summarize_candles(market_hash_name: str, body: dict[str, Any]) -> dict[str, Any]:
     candles = [row for row in body.get("data", []) if isinstance(row, dict)]
     values = [price_from_minor_units(row.get("c")) for row in candles]
     values = [value for value in values if value is not None]
     vol_7d = volatility(values[-8:])
     vol_30d = volatility(values)
+    change_7d = period_change(values, 7)
+    worst_change_7d = worst_period_change(values, 7)
     last = candles[-1] if candles else {}
     last_price = values[-1] if values else None
     volume_24h = int(last.get("v") or 0) if isinstance(last, dict) else 0
@@ -115,6 +139,8 @@ def summarize_candles(market_hash_name: str, body: dict[str, Any]) -> dict[str, 
         "hash_name": market_hash_name,
         "volatility_7d": str(vol_7d.quantize(Decimal("0.0001"))) if vol_7d is not None else None,
         "volatility_30d": str(vol_30d.quantize(Decimal("0.0001"))) if vol_30d is not None else None,
+        "change_7d": str(change_7d.quantize(Decimal("0.0001"))) if change_7d is not None else None,
+        "worst_change_7d": str(worst_change_7d.quantize(Decimal("0.0001"))) if worst_change_7d is not None else None,
         "volume_24h": volume_24h,
         "listing_count": listing_count,
         "last_price": str(last_price.quantize(Decimal("0.01"))) if last_price is not None else None,

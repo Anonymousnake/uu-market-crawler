@@ -4,7 +4,7 @@ import sqlite3
 import tempfile
 from pathlib import Path
 
-from uu_market_probe import parse_sale_template_response, write_cache
+from uu_market_probe import build_headers, parse_sale_template_response, write_cache
 
 
 def test_sample_query_sale_template():
@@ -27,8 +27,23 @@ def test_sample_query_sale_template():
     assert row["list_type"] == 10
 
 
+def test_headers_file_loader():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "headers.json"
+        path.write_text(
+            json.dumps({"headers": {"authorization": "secret", "deviceId": "device"}}),
+            encoding="utf-8",
+        )
+        os.environ["UU_HEADERS_FILE"] = str(path)
+        headers = build_headers()
+        assert headers["authorization"] == "secret"
+        assert headers["deviceId"] == "device"
+        os.environ.pop("UU_HEADERS_FILE", None)
+
+
 if __name__ == "__main__":
     test_sample_query_sale_template()
+    test_headers_file_loader()
     with tempfile.TemporaryDirectory() as temp_dir:
         db_path = str(Path(temp_dir) / "cache.sqlite3")
         os.environ["UU_CACHE_DB"] = db_path

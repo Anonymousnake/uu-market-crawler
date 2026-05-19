@@ -44,6 +44,21 @@ def env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
 
 
+def headers_from_file() -> dict[str, str]:
+    path = env("UU_HEADERS_FILE")
+    if not path:
+        return {}
+
+    with open(path, "r", encoding="utf-8") as file:
+        payload = json.load(file)
+
+    headers = payload.get("headers", payload)
+    if not isinstance(headers, dict):
+        raise ValueError("UU_HEADERS_FILE must contain a JSON object or a top-level headers object")
+
+    return {str(key): str(value) for key, value in headers.items() if value is not None and str(value)}
+
+
 def build_headers() -> dict[str, str]:
     headers = {
         "accept": "application/json, text/plain, */*",
@@ -57,6 +72,7 @@ def build_headers() -> dict[str, str]:
         "secret-v": "h5_v1",
         "user-agent": env("UU_USER_AGENT", DEFAULT_USER_AGENT),
     }
+    headers.update(headers_from_file())
 
     optional = {
         "authorization": env("UU_AUTHORIZATION"),
@@ -194,21 +210,21 @@ def parse_on_sale_response(body: dict[str, Any]) -> list[dict[str, Any]]:
     rows = [row for row in first_list(body.get("Data", body.get("data"))) if isinstance(row, dict)]
     parsed = []
     for row in rows:
-        parsed.append(
-            {
-                "id": row.get("id") or row.get("commodityId") or row.get("assetId"),
-                "template_id": row.get("templateId") or row.get("commodityTemplateId"),
-                "name": row.get("commodityName") or row.get("name"),
-                "hash_name": row.get("commodityHashName") or row.get("hashName"),
-                "price": to_decimal(row.get("price") or row.get("salePrice") or row.get("unitPrice")),
-                "seller_id": row.get("sellerId") or row.get("userId"),
-                "float_value": row.get("abrasion") or row.get("floatValue"),
-                "paint_seed": row.get("paintSeed") or row.get("paintseed"),
-                "inspect_url": row.get("inspectUrl") or row.get("inspectUrlSteam"),
-                "status": row.get("status"),
-                "raw_keys": sorted(row.keys()),
-            }
-        )
+        parsed_row = {
+            "id": row.get("id") or row.get("commodityId") or row.get("assetId"),
+            "template_id": row.get("templateId") or row.get("commodityTemplateId"),
+            "name": row.get("commodityName") or row.get("name"),
+            "hash_name": row.get("commodityHashName") or row.get("hashName"),
+            "price": to_decimal(row.get("price") or row.get("salePrice") or row.get("unitPrice")),
+            "seller_id": row.get("sellerId") or row.get("userId"),
+            "float_value": row.get("abrasion") or row.get("floatValue"),
+            "paint_seed": row.get("paintSeed") or row.get("paintseed"),
+            "inspect_url": row.get("inspectUrl") or row.get("inspectUrlSteam"),
+            "status": row.get("status"),
+        }
+        if env("UU_INCLUDE_RAW_KEYS").lower() in {"1", "true", "yes", "on"}:
+            parsed_row["raw_keys"] = sorted(row.keys())
+        parsed.append(parsed_row)
     return parsed
 
 

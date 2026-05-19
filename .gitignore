@@ -1,3 +1,5 @@
+.secrets/
+*.local.json
 .env
 *.sqlite3
 *.sqlite

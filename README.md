@@ -71,6 +71,19 @@ UU_LIMIT=5
 UU_OUTPUT=summary
 UU_WRITE_CACHE=0
 UU_CACHE_DB=D:/Codex/uu-market-crawler/uu_market_cache.sqlite3
+UU_HEADERS_FILE=D:/Codex/uu-market-crawler/.secrets/uu_headers.local.json
+UU_INCLUDE_RAW_KEYS=0
+```
+
+Run with saved local headers:
+
+```powershell
+cd D:/Codex/uu-market-crawler
+$env:UU_HEADERS_FILE='D:/Codex/uu-market-crawler/.secrets/uu_headers.local.json'
+$env:UU_MODE='onsale'
+$env:UU_TEMPLATE_ID='102276'
+$env:UU_WRITE_CACHE='1'
+python .\uu_market_probe.py
 ```
 
 Write parsed results to SQLite:

@@ -100,7 +100,19 @@ Tables:
 ```text
 sale_template_snapshots
 on_sale_listing_snapshots
+radar_alert_history
 ```
+
+Radar notification cooldown:
+
+```text
+UU_PUSH_COOLDOWN_HOURS=12
+UU_REPUSH_DELTA_EDGE=0.05
+```
+
+After a candidate is pushed, the same item is suppressed for the cooldown
+window. It can be pushed early again if its edge improves by at least the
+configured delta.
 
 Run the filter/tag probe instead:
 

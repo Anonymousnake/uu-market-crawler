@@ -1,6 +1,7 @@
 import json
 import os
 import random
+import sqlite3
 import sys
 import time
 from dataclasses import dataclass
@@ -11,6 +12,7 @@ from typing import Any
 from uu_market_probe import (
     QUERY_SALE_TEMPLATE_URL,
     build_headers,
+    init_cache,
     parse_sale_template_response,
     post_json_once,
     sleep_jitter,
@@ -28,8 +30,11 @@ STEAM_FEE_DIVISOR = Decimal("1.15")
 class RadarConfig:
     watchlist_file: Path
     output_file: Path
+    cache_db: Path
     limit: int
     min_edge: Decimal
+    push_cooldown_hours: int
+    repush_delta_edge: Decimal
     min_on_sale_count: int
     page_size: int
     sleep_min: Decimal
@@ -55,11 +60,15 @@ def int_env(name: str, default: str) -> int:
 
 
 def load_config() -> RadarConfig:
+    cache_db = Path(env("UU_CACHE_DB", str(Path(__file__).with_name("uu_market_cache.sqlite3"))))
     return RadarConfig(
         watchlist_file=Path(env("UU_WATCHLIST_FILE", str(DEFAULT_WATCHLIST))),
         output_file=Path(env("UU_RADAR_OUTPUT", str(DEFAULT_OUTPUT))),
+        cache_db=cache_db,
         limit=int_env("UU_RADAR_LIMIT", "12"),
         min_edge=decimal_env("UU_MIN_EDGE", "0.03"),
+        push_cooldown_hours=int_env("UU_PUSH_COOLDOWN_HOURS", "12"),
+        repush_delta_edge=decimal_env("UU_REPUSH_DELTA_EDGE", "0.05"),
         min_on_sale_count=int_env("UU_MIN_ON_SALE_COUNT", "100"),
         page_size=int_env("UU_PAGE_SIZE", "20"),
         sleep_min=decimal_env("UU_SLEEP_MIN", "2.5"),
@@ -141,41 +150,138 @@ def score_row(watch: dict[str, Any], row: dict[str, Any], min_on_sale_count: int
     }
 
 
+def ensure_history_schema(connection: Any) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS radar_alert_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            query TEXT NOT NULL,
+            hash_name TEXT NOT NULL,
+            template_id TEXT,
+            edge TEXT,
+            payload TEXT NOT NULL
+        )
+        """
+    )
+    connection.commit()
+
+
+def last_alert(connection: Any, query: str, hash_name: str) -> dict[str, Any] | None:
+    row = connection.execute(
+        """
+        SELECT created_at, edge, payload
+        FROM radar_alert_history
+        WHERE query = ? AND hash_name = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (query, hash_name),
+    ).fetchone()
+    if row is None:
+        return None
+    return {"created_at": row[0], "edge": row[1], "payload": row[2]}
+
+
+def record_alert(connection: Any, item: dict[str, Any]) -> None:
+    connection.execute(
+        """
+        INSERT INTO radar_alert_history (query, hash_name, template_id, edge, payload)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            item.get("query") or "",
+            item.get("hash_name") or "",
+            str(item.get("template_id") or ""),
+            str(item.get("edge") or ""),
+            json.dumps(item, ensure_ascii=False),
+        ),
+    )
+    connection.commit()
+
+
+def should_notify(config: RadarConfig, connection: Any, item: dict[str, Any]) -> bool:
+    current_edge = money(item.get("edge"))
+    if current_edge is None:
+        return False
+
+    previous = last_alert(connection, str(item.get("query") or ""), str(item.get("hash_name") or ""))
+    if previous is None:
+        return True
+
+    previous_edge = money(previous.get("edge"))
+    if previous_edge is None:
+        return True
+
+    current_time = time.time()
+    try:
+        created_at = time.mktime(time.strptime(previous["created_at"], "%Y-%m-%d %H:%M:%S"))
+    except Exception:
+        created_at = 0
+
+    cooldown_seconds = config.push_cooldown_hours * 3600
+    if current_time - created_at >= cooldown_seconds:
+        return True
+
+    if current_edge - previous_edge >= config.repush_delta_edge:
+        return True
+
+    return False
+
+
 def run_radar() -> dict[str, Any]:
     config = load_config()
     headers = build_headers()
     watchlist = load_watchlist(config.watchlist_file, config.limit)
     candidates = []
+    notifications = []
     errors = []
 
-    for index, watch in enumerate(watchlist, start=1):
-        if index > 1:
-            time.sleep(float(random.uniform(float(config.sleep_min), float(config.sleep_max))))
-        query = str(watch.get("query"))
-        try:
-            rows = query_sale_template(headers, query, config.page_size)
-            exact = choose_exact(query, rows)
-            if exact is not None:
-                candidate = score_row(watch, exact, config.min_on_sale_count)
-                edge = money(candidate.get("edge"))
-                if edge is not None and edge >= config.min_edge:
-                    candidates.append(candidate)
-        except Exception as exc:  # noqa: BLE001 - CLI should collect per-item failures.
-            errors.append({"query": query, "error": str(exc)})
-            if "403" in str(exc) or "429" in str(exc):
-                break
+    cache_connection = sqlite3.connect(config.cache_db)
+    try:
+        init_cache(cache_connection)
+        ensure_history_schema(cache_connection)
+    except Exception:
+        cache_connection.close()
+        raise
 
-    candidates.sort(key=lambda item: Decimal(item.get("score") or "-999"), reverse=True)
-    output = {
-        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "watchlist_checked": len(watchlist),
-        "candidate_count": len(candidates),
-        "min_edge": str(config.min_edge),
-        "candidates": candidates,
-        "errors": errors,
-    }
-    config.output_file.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
-    return output
+    try:
+        for index, watch in enumerate(watchlist, start=1):
+            if index > 1:
+                time.sleep(float(random.uniform(float(config.sleep_min), float(config.sleep_max))))
+            query = str(watch.get("query"))
+            try:
+                rows = query_sale_template(headers, query, config.page_size)
+                exact = choose_exact(query, rows)
+                if exact is not None:
+                    candidate = score_row(watch, exact, config.min_on_sale_count)
+                    edge = money(candidate.get("edge"))
+                    if edge is not None and edge >= config.min_edge:
+                        candidates.append(candidate)
+                        if should_notify(config, cache_connection, candidate):
+                            notifications.append(candidate)
+                            record_alert(cache_connection, candidate)
+            except Exception as exc:  # noqa: BLE001 - CLI should collect per-item failures.
+                errors.append({"query": query, "error": str(exc)})
+                if "403" in str(exc) or "429" in str(exc):
+                    break
+
+        candidates.sort(key=lambda item: Decimal(item.get("score") or "-999"), reverse=True)
+        notifications.sort(key=lambda item: Decimal(item.get("score") or "-999"), reverse=True)
+        output = {
+            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "watchlist_checked": len(watchlist),
+            "candidate_count": len(candidates),
+            "notification_count": len(notifications),
+            "min_edge": str(config.min_edge),
+            "candidates": candidates,
+            "notifications": notifications,
+            "errors": errors,
+        }
+        config.output_file.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
+        return output
+    finally:
+        cache_connection.close()
 
 
 def main() -> int:

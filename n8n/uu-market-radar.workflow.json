@@ -54,7 +54,7 @@
         "conditions": {
           "number": [
             {
-              "value1": "={{$json.candidate_count}}",
+              "value1": "={{$json.notification_count}}",
               "operation": "larger",
               "value2": 0
             }
@@ -72,7 +72,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const rows = ($json.candidates || []).slice(0, 10);\nconst lines = rows.map((item, index) => `${index + 1}. ${item.hash_name} | UU ${item.uu_price} | Steam?? ${item.steam_net_after_fee} | edge ${item.edge_percent}% | ?? ${item.on_sale_count}`);\nreturn [{ json: { text: `UU -> Steam ????\\n??: ${$json.generated_at}\\n??: ${$json.candidate_count}\\n\\n${lines.join('\\n')}` } }];"
+        "jsCode": "const rows = (($json.notifications && $json.notifications.length) ? $json.notifications : ($json.candidates || [])).slice(0, 10);\nconst lines = rows.map((item, index) => `${index + 1}. ${item.hash_name} | UU ${item.uu_price} | Steam到手 ${item.steam_net_after_fee} | edge ${item.edge_percent}% | 挂单 ${item.on_sale_count}`);\nconst title = ($json.notification_count && $json.notification_count > 0) ? `UU -> Steam 余额雷达（新增）` : `UU -> Steam 余额雷达`;\nreturn [{ json: { text: `${title}\\n时间: ${$json.generated_at}\\n候选: ${$json.candidate_count}\\n通知: ${$json.notification_count || 0}\\n\\n${lines.join('\\n')}` } }];"
       },
       "id": "format-message",
       "name": "Format Message",

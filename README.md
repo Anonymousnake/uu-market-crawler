@@ -128,6 +128,8 @@ The radar now gets Steam-side price data directly from Steam Community Market:
   cooldown-risk scoring.
 - recent hourly history is grouped by UTC hour to mark low-price/high-price
   intraday windows in the radar output.
+- UU prices observed during radar runs are stored in SQLite and grouped by
+  Beijing hour to estimate when UU buy prices are usually lower.
 
 The cache avoids repeatedly hitting Steam for the same market item. Tune it with:
 

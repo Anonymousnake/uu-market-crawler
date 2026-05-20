@@ -5,6 +5,7 @@ import sqlite3
 import sys
 import time
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -183,7 +184,12 @@ def current_usd_cny_rate(config: RadarConfig) -> Decimal:
     )
 
 
-def score_row(watch: dict[str, Any], row: dict[str, Any], min_on_sale_count: int) -> dict[str, Any]:
+def score_row(
+    watch: dict[str, Any],
+    row: dict[str, Any],
+    min_on_sale_count: int,
+    uu_intraday_stats: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     uu_price = money(row.get("price"))
     steam_price = money(row.get("steam_median_price") or row.get("steam_price"))
     on_sale_count = int(row.get("on_sale_count") or 0)
@@ -253,6 +259,11 @@ def score_row(watch: dict[str, Any], row: dict[str, Any], min_on_sale_count: int
         "steam_intraday_current_vs_overall": (row.get("intraday_stats") or {}).get("current_vs_overall"),
         "steam_intraday_low_hours": (row.get("intraday_stats") or {}).get("low_hours"),
         "steam_intraday_high_hours": (row.get("intraday_stats") or {}).get("high_hours"),
+        "uu_intraday_signal": (uu_intraday_stats or {}).get("current_signal"),
+        "uu_intraday_current_vs_overall": (uu_intraday_stats or {}).get("current_vs_overall"),
+        "uu_intraday_low_hours": (uu_intraday_stats or {}).get("low_hours"),
+        "uu_intraday_high_hours": (uu_intraday_stats or {}).get("high_hours"),
+        "uu_intraday_sample_count": (uu_intraday_stats or {}).get("sample_count"),
     }
 
 
@@ -432,7 +443,143 @@ def ensure_history_schema(connection: Any) -> None:
         )
         """
     )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS uu_price_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            query TEXT NOT NULL,
+            hash_name TEXT NOT NULL,
+            template_id TEXT,
+            price TEXT NOT NULL,
+            on_sale_count INTEGER
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_uu_price_history_item_time
+        ON uu_price_history (hash_name, created_at)
+        """
+    )
     connection.commit()
+
+
+def record_uu_price(connection: Any, watch: dict[str, Any], row: dict[str, Any]) -> None:
+    price = money(row.get("price"))
+    if price is None:
+        return
+    connection.execute(
+        """
+        INSERT INTO uu_price_history (query, hash_name, template_id, price, on_sale_count)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            str(watch.get("query") or ""),
+            str(row.get("hash_name") or watch.get("hash_name") or ""),
+            str(row.get("id") or watch.get("template_id") or ""),
+            str(price),
+            int(row.get("on_sale_count") or 0),
+        ),
+    )
+    connection.commit()
+
+
+def summarize_uu_intraday(connection: Any, hash_name: str, lookback_days: int = 30) -> dict[str, Any]:
+    cutoff = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(time.time() - lookback_days * 86400))
+    rows = connection.execute(
+        """
+        SELECT created_at, price, on_sale_count
+        FROM uu_price_history
+        WHERE hash_name = ? AND created_at >= ?
+        ORDER BY created_at ASC
+        """,
+        (hash_name, cutoff),
+    ).fetchall()
+    buckets: dict[int, dict[str, Any]] = {}
+    prices = []
+    latest_hour = None
+    for created_at, price_text, on_sale_count in rows:
+        price = money(price_text)
+        if price is None:
+            continue
+        try:
+            dt_utc = datetime.strptime(str(created_at), "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        hour_bj = dt_utc.astimezone(timezone(timedelta(hours=8))).hour
+        bucket = buckets.setdefault(hour_bj, {"prices": [], "depth": []})
+        bucket["prices"].append(price)
+        bucket["depth"].append(int(on_sale_count or 0))
+        prices.append(price)
+        latest_hour = hour_bj
+
+    overall = median_decimal(prices)
+    if overall is None:
+        return empty_uu_intraday(lookback_days)
+
+    hour_rows = []
+    for hour, bucket in buckets.items():
+        hour_median = median_decimal(bucket["prices"])
+        if hour_median is None:
+            continue
+        vs_overall = (hour_median - overall) / overall if overall else Decimal("0")
+        hour_rows.append(
+            {
+                "hour_bj": hour,
+                "median_price": str(hour_median.quantize(Decimal("0.0001"))),
+                "vs_overall": str(vs_overall.quantize(Decimal("0.0001"))),
+                "sample_count": len(bucket["prices"]),
+                "avg_depth": int(sum(bucket["depth"]) / len(bucket["depth"])) if bucket["depth"] else None,
+            }
+        )
+
+    low_hours = sorted(hour_rows, key=lambda item: money(item["vs_overall"]) or Decimal("0"))[:3]
+    high_hours = sorted(hour_rows, key=lambda item: money(item["vs_overall"]) or Decimal("0"), reverse=True)[:3]
+    current_bucket = next((item for item in hour_rows if item["hour_bj"] == latest_hour), None)
+    current_vs = money(current_bucket.get("vs_overall")) if current_bucket else None
+    return {
+        "source": "uu-local-history",
+        "lookback_days": lookback_days,
+        "sample_count": len(prices),
+        "overall_median": str(overall.quantize(Decimal("0.0001"))),
+        "low_hours": low_hours,
+        "high_hours": high_hours,
+        "current_hour_bj": latest_hour,
+        "current_vs_overall": str(current_vs.quantize(Decimal("0.0001"))) if current_vs is not None else None,
+        "current_signal": uu_intraday_signal(current_vs, len(prices)),
+    }
+
+
+def empty_uu_intraday(lookback_days: int) -> dict[str, Any]:
+    return {
+        "source": "uu-local-history",
+        "lookback_days": lookback_days,
+        "sample_count": 0,
+        "low_hours": [],
+        "high_hours": [],
+        "current_signal": "insufficient",
+    }
+
+
+def median_decimal(values: list[Decimal]) -> Decimal | None:
+    if not values:
+        return None
+    sorted_values = sorted(values)
+    midpoint = len(sorted_values) // 2
+    if len(sorted_values) % 2:
+        return sorted_values[midpoint]
+    return (sorted_values[midpoint - 1] + sorted_values[midpoint]) / Decimal("2")
+
+
+def uu_intraday_signal(current_vs_overall: Decimal | None, sample_count: int) -> str:
+    if sample_count < 24 or current_vs_overall is None:
+        return "insufficient"
+    if current_vs_overall <= Decimal("-0.01"):
+        return "buy_window"
+    if current_vs_overall >= Decimal("0.01"):
+        return "expensive_window"
+    return "neutral"
 
 
 def last_alert(connection: Any, query: str, hash_name: str) -> dict[str, Any] | None:
@@ -522,8 +669,13 @@ def run_radar() -> dict[str, Any]:
                 rows = query_sale_template(headers, query, config.page_size)
                 exact = choose_exact(query, rows)
                 if exact is not None:
+                    record_uu_price(cache_connection, watch, exact)
+                    uu_intraday_stats = summarize_uu_intraday(
+                        cache_connection,
+                        str(exact.get("hash_name") or watch.get("hash_name") or ""),
+                    )
                     exact = enrich_with_steam(exact, config)
-                    candidate = score_row(watch, exact, config.min_on_sale_count)
+                    candidate = score_row(watch, exact, config.min_on_sale_count, uu_intraday_stats)
                     edge = money(candidate.get("edge"))
                     if edge is not None and edge >= config.min_edge:
                         candidates.append(candidate)

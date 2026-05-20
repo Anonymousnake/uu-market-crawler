@@ -706,6 +706,65 @@ def run_radar() -> dict[str, Any]:
         cache_connection.close()
 
 
+def sample_uu_prices() -> dict[str, Any]:
+    config = load_config()
+    headers = build_headers()
+    watchlist = load_watchlist(config.watchlist_file, config.limit)
+    sampled = []
+    errors = []
+
+    cache_connection = sqlite3.connect(config.cache_db)
+    try:
+        init_cache(cache_connection)
+        ensure_history_schema(cache_connection)
+    except Exception:
+        cache_connection.close()
+        raise
+
+    try:
+        for index, watch in enumerate(watchlist, start=1):
+            if index > 1:
+                time.sleep(float(random.uniform(float(config.sleep_min), float(config.sleep_max))))
+            query = str(watch.get("query"))
+            try:
+                rows = query_sale_template(headers, query, config.page_size)
+                exact = choose_exact(query, rows)
+                if exact is None:
+                    errors.append({"query": query, "error": "no matching UU item"})
+                    continue
+                record_uu_price(cache_connection, watch, exact)
+                stats = summarize_uu_intraday(
+                    cache_connection,
+                    str(exact.get("hash_name") or watch.get("hash_name") or ""),
+                )
+                sampled.append(
+                    {
+                        "query": query,
+                        "hash_name": exact.get("hash_name") or watch.get("hash_name"),
+                        "name": exact.get("name"),
+                        "uu_price": str(money(exact.get("price")) or ""),
+                        "on_sale_count": int(exact.get("on_sale_count") or 0),
+                        "uu_intraday_sample_count": stats.get("sample_count"),
+                        "uu_intraday_signal": stats.get("current_signal"),
+                    }
+                )
+            except Exception as exc:  # noqa: BLE001 - collect per-item failures.
+                errors.append({"query": query, "error": str(exc)})
+                if "403" in str(exc) or "429" in str(exc):
+                    break
+
+        return {
+            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "mode": "uu_sample",
+            "watchlist_checked": len(watchlist),
+            "sampled_count": len(sampled),
+            "sampled": sampled,
+            "errors": errors,
+        }
+    finally:
+        cache_connection.close()
+
+
 def main() -> int:
     output = run_radar()
     print(json.dumps(output, ensure_ascii=False, indent=2))

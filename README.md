@@ -130,6 +130,8 @@ The radar now gets Steam-side price data directly from Steam Community Market:
   intraday windows in the radar output.
 - UU prices observed during radar runs are stored in SQLite and grouped by
   Beijing hour to estimate when UU buy prices are usually lower.
+- `POST /sample` records UU prices only. It does not call Steam and does not
+  create notification candidates, so it is safe for quiet half-hour sampling.
 
 The cache avoids repeatedly hitting Steam for the same market item. Tune it with:
 

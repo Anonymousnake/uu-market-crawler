@@ -3,7 +3,7 @@ import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from uu_market_radar import DEFAULT_OUTPUT, run_radar
+from uu_market_radar import DEFAULT_OUTPUT, run_radar, sample_uu_prices
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -30,13 +30,21 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
-        if path != "/run":
+        if path == "/run":
+            try:
+                self._json(200, run_radar())
+            except Exception as exc:  # noqa: BLE001 - surface API error for n8n.
+                self._json(500, {"ok": False, "error": str(exc)})
+            return
+        if path == "/sample":
+            try:
+                self._json(200, sample_uu_prices())
+            except Exception as exc:  # noqa: BLE001 - surface API error for systemd timer.
+                self._json(500, {"ok": False, "error": str(exc)})
+            return
+        else:
             self._json(404, {"ok": False, "error": "not found"})
             return
-        try:
-            self._json(200, run_radar())
-        except Exception as exc:  # noqa: BLE001 - surface API error for n8n.
-            self._json(500, {"ok": False, "error": str(exc)})
 
 
 def main() -> int:

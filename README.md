@@ -132,6 +132,8 @@ The radar now gets Steam-side price data directly from Steam Community Market:
   Beijing hour to estimate when UU buy prices are usually lower.
 - `POST /sample` records UU prices only. It does not call Steam and does not
   create notification candidates, so it is safe for quiet half-hour sampling.
+- If `POST /sample` sees crawler errors, it can notify AstrBot groups with
+  `ASTRBOT_API_KEY`, `ASTRBOT_NOTIFY_GROUPS`, and `ASTRBOT_MESSAGE_URL`.
 
 The cache avoids repeatedly hitting Steam for the same market item. Tune it with:
 

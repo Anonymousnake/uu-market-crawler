@@ -4,6 +4,8 @@ import random
 import sqlite3
 import sys
 import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -48,6 +50,7 @@ class RadarConfig:
     steam_cache_ttl_seconds: int
     steam_sleep_min: Decimal
     steam_sleep_max: Decimal
+    sample_error_notify_cooldown_minutes: int
 
 
 def env(name: str, default: str = "") -> str:
@@ -91,6 +94,7 @@ def load_config() -> RadarConfig:
         steam_cache_ttl_seconds=int_env("STEAM_CACHE_TTL_SECONDS", "900"),
         steam_sleep_min=decimal_env("STEAM_SLEEP_MIN", "1.5"),
         steam_sleep_max=decimal_env("STEAM_SLEEP_MAX", "3.5"),
+        sample_error_notify_cooldown_minutes=int_env("UU_SAMPLE_ERROR_NOTIFY_COOLDOWN_MINUTES", "60"),
     )
 
 
@@ -462,6 +466,16 @@ def ensure_history_schema(connection: Any) -> None:
         ON uu_price_history (hash_name, created_at)
         """
     )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS sampler_error_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            fingerprint TEXT NOT NULL,
+            payload TEXT NOT NULL
+        )
+        """
+    )
     connection.commit()
 
 
@@ -644,6 +658,104 @@ def should_notify(config: RadarConfig, connection: Any, item: dict[str, Any]) ->
     return False
 
 
+def should_notify_sampler_error(
+    config: RadarConfig,
+    connection: Any,
+    errors: list[dict[str, Any]],
+) -> bool:
+    if not errors:
+        return False
+    fingerprint = sampler_error_fingerprint(errors)
+    row = connection.execute(
+        """
+        SELECT created_at
+        FROM sampler_error_history
+        WHERE fingerprint = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (fingerprint,),
+    ).fetchone()
+    if row is None:
+        return True
+    try:
+        created_at = time.mktime(time.strptime(row[0], "%Y-%m-%d %H:%M:%S"))
+    except Exception:
+        created_at = 0
+    cooldown_seconds = config.sample_error_notify_cooldown_minutes * 60
+    return time.time() - created_at >= cooldown_seconds
+
+
+def record_sampler_error(connection: Any, errors: list[dict[str, Any]]) -> None:
+    connection.execute(
+        """
+        INSERT INTO sampler_error_history (fingerprint, payload)
+        VALUES (?, ?)
+        """,
+        (sampler_error_fingerprint(errors), json.dumps(errors, ensure_ascii=False)),
+    )
+    connection.commit()
+
+
+def sampler_error_fingerprint(errors: list[dict[str, Any]]) -> str:
+    first = errors[0] if errors else {}
+    query = str(first.get("query") or "")
+    error = str(first.get("error") or "")
+    if "403" in error:
+        kind = "403"
+    elif "429" in error:
+        kind = "429"
+    elif "timeout" in error.lower():
+        kind = "timeout"
+    else:
+        kind = error[:80]
+    return f"{query}:{kind}"
+
+
+def notify_sampler_errors(config: RadarConfig, errors: list[dict[str, Any]], sampled_count: int) -> bool:
+    api_key = env("ASTRBOT_API_KEY")
+    groups = [group.strip() for group in env("ASTRBOT_NOTIFY_GROUPS", "716934519,951944306").split(",") if group.strip()]
+    url = env("ASTRBOT_MESSAGE_URL", "http://127.0.0.1:6185/api/v1/im/message")
+    if not api_key or not groups:
+        return False
+
+    first_lines = []
+    for item in errors[:5]:
+        first_lines.append(f"- {item.get('query')}: {item.get('error')}")
+    message = (
+        "UU 静默采样出错\n"
+        f"时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}\n"
+        f"已记录: {sampled_count}，错误: {len(errors)}\n"
+        + "\n".join(first_lines)
+    )
+    sent = False
+    for group in groups:
+        body = json.dumps(
+            {
+                "umo": f"napcat_onebot_v11:GroupMessage:{group}",
+                "message": message,
+            },
+            ensure_ascii=False,
+        ).encode("utf-8")
+        request = urllib.request.Request(
+            url,
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "X-API-Key": api_key,
+                "User-Agent": "uu-market-sampler/0.1",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                response.read()
+            sent = True
+        except (urllib.error.URLError, TimeoutError, OSError):
+            continue
+    return sent
+
+
 def run_radar() -> dict[str, Any]:
     config = load_config()
     headers = build_headers()
@@ -753,11 +865,18 @@ def sample_uu_prices() -> dict[str, Any]:
                 if "403" in str(exc) or "429" in str(exc):
                     break
 
+        notified = False
+        if errors and should_notify_sampler_error(config, cache_connection, errors):
+            notified = notify_sampler_errors(config, errors, len(sampled))
+            if notified:
+                record_sampler_error(cache_connection, errors)
+
         return {
             "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "mode": "uu_sample",
             "watchlist_checked": len(watchlist),
             "sampled_count": len(sampled),
+            "error_notified": notified,
             "sampled": sampled,
             "errors": errors,
         }

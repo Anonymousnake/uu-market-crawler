@@ -169,6 +169,7 @@ def enrich_with_steam(row: dict[str, Any], config: RadarConfig) -> dict[str, Any
     row["steam_orderbook_currency"] = listing.get("orderbook_currency")
     row["steam_orderbook_fx_rate"] = listing.get("orderbook_usd_cny_rate")
     row["history_stats"] = steam.get("history_stats")
+    row["intraday_stats"] = steam.get("intraday_stats")
     return row
 
 
@@ -207,6 +208,7 @@ def score_row(watch: dict[str, Any], row: dict[str, Any], min_on_sale_count: int
         on_sale_count=on_sale_count,
         min_on_sale_count=min_on_sale_count,
         history_stats=row.get("history_stats"),
+        intraday_stats=row.get("intraday_stats"),
         conservative_discount=conservative_discount,
     )
     risk_penalty = Decimal(risk["risk_penalty"])
@@ -247,6 +249,10 @@ def score_row(watch: dict[str, Any], row: dict[str, Any], min_on_sale_count: int
         "risk_penalty": risk["risk_penalty"],
         "risk_notes": risk["risk_notes"],
         "risk_dimensions": risk["risk_dimensions"],
+        "steam_intraday_signal": (row.get("intraday_stats") or {}).get("current_signal"),
+        "steam_intraday_current_vs_overall": (row.get("intraday_stats") or {}).get("current_vs_overall"),
+        "steam_intraday_low_hours": (row.get("intraday_stats") or {}).get("low_hours"),
+        "steam_intraday_high_hours": (row.get("intraday_stats") or {}).get("high_hours"),
     }
 
 
@@ -272,6 +278,7 @@ def risk_profile(
     on_sale_count: int,
     min_on_sale_count: int,
     history_stats: dict[str, Any] | None = None,
+    intraday_stats: dict[str, Any] | None = None,
     conservative_discount: Decimal | None = None,
 ) -> dict[str, Any]:
     penalty = Decimal("0")
@@ -282,6 +289,7 @@ def risk_profile(
         "cooldown": {"level": "low", "notes": []},
         "data": {"level": "low", "notes": []},
         "capital": {"level": "low", "notes": []},
+        "timing": {"level": "low", "notes": []},
     }
 
     if edge is None:
@@ -365,6 +373,18 @@ def risk_profile(
             notes.append("thin 24h volume")
             dimensions["liquidity"]["level"] = max_level(dimensions["liquidity"]["level"], "medium")
             dimensions["liquidity"]["notes"].append("thin 24h volume")
+
+    if isinstance(intraday_stats, dict):
+        signal = str(intraday_stats.get("current_signal") or "")
+        current_vs = money(intraday_stats.get("current_vs_overall"))
+        sample_count = int(intraday_stats.get("sample_count") or 0)
+        if signal == "sell_window":
+            penalty += Decimal("0.01")
+            notes.append("current hour is relatively expensive")
+            dimensions["timing"]["level"] = max_level(dimensions["timing"]["level"], "medium")
+            dimensions["timing"]["notes"].append("current hour is relatively expensive")
+        elif sample_count >= 72 and current_vs is not None and current_vs <= Decimal("-0.015"):
+            dimensions["timing"]["notes"].append("current hour is relatively cheap")
 
     if conservative_discount is not None:
         if conservative_discount >= Decimal("9.30"):

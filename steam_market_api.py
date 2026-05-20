@@ -6,7 +6,9 @@ import random
 import re
 import time
 import urllib.parse
+from collections import defaultdict
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -86,6 +88,7 @@ def get_market_snapshot(
         "priceoverview": overview,
         "listing": listing,
         "history_stats": summarize_history(listing.get("price_history") or []),
+        "intraday_stats": summarize_intraday(listing.get("price_history") or []),
     }
     items[market_hash_name] = {**snapshot, "_cached_at": now}
     cache["updated_at"] = snapshot["fetched_at"]
@@ -267,15 +270,30 @@ def parse_price_history(text: str) -> list[dict[str, Any]]:
 
 
 def summarize_history(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    values = [parse_decimal(row.get("price_median")) for row in rows]
-    values = [value for value in values if value is not None]
-    purchases = [parse_int(row.get("purchases")) or 0 for row in rows]
-    vol_7d = volatility(values[-8:])
-    vol_30d = volatility(values[-31:])
-    change_7d = period_change(values, 7)
-    worst_change_7d = worst_period_change(values[-31:], 7)
+    points = []
+    for row in rows:
+        timestamp = parse_int(row.get("time"))
+        price = parse_decimal(row.get("price_median"))
+        if timestamp is None or price is None:
+            continue
+        points.append(
+            {
+                "time": timestamp,
+                "price": price,
+                "purchases": parse_int(row.get("purchases")) or 0,
+            }
+        )
+    points.sort(key=lambda row: row["time"])
+    values = [row["price"] for row in points]
+    last_time = int(points[-1]["time"]) if points else int(time.time())
+    values_7d = [row["price"] for row in points if int(row["time"]) >= last_time - 7 * 86400]
+    values_30d = [row["price"] for row in points if int(row["time"]) >= last_time - 30 * 86400]
+    vol_7d = volatility(values_7d)
+    vol_30d = volatility(values_30d)
+    change_7d = change_since(points, last_time - 7 * 86400)
+    worst_change_7d = worst_rolling_change(points, window_seconds=7 * 86400, lookback_seconds=30 * 86400)
     last_price = values[-1] if values else None
-    volume_24h = purchases[-1] if purchases else 0
+    volume_24h = sum(int(row["purchases"]) for row in points if int(row["time"]) >= last_time - 86400)
     return {
         "source": "steamcommunity:listing",
         "volatility_7d": decimal_to_str(quantize(vol_7d, "0.0001")),
@@ -286,6 +304,103 @@ def summarize_history(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "last_price": decimal_to_str(quantize(last_price, "0.01")),
         "sample_count": len(values),
     }
+
+
+def summarize_intraday(rows: list[dict[str, Any]], lookback_days: int = 30) -> dict[str, Any]:
+    if not rows:
+        return {
+            "source": "steamcommunity:listing",
+            "lookback_days": lookback_days,
+            "sample_count": 0,
+            "low_hours": [],
+            "high_hours": [],
+        }
+
+    now_ts = int(time.time())
+    cutoff_ts = now_ts - lookback_days * 86400
+    by_hour: dict[int, dict[str, Any]] = defaultdict(lambda: {"prices": [], "volume": 0})
+    all_prices: list[Decimal] = []
+    latest_row: dict[str, Any] | None = None
+
+    for row in rows:
+        timestamp = parse_int(row.get("time"))
+        price = parse_decimal(row.get("price_median"))
+        if timestamp is None or price is None or timestamp < cutoff_ts:
+            continue
+        hour = datetime.fromtimestamp(timestamp, tz=timezone.utc).hour
+        by_hour[hour]["prices"].append(price)
+        by_hour[hour]["volume"] += parse_int(row.get("purchases")) or 0
+        all_prices.append(price)
+        if latest_row is None or timestamp > int(latest_row["time"]):
+            latest_row = {"time": timestamp, "price": price, "hour": hour}
+
+    overall = median(all_prices)
+    if overall is None:
+        return {
+            "source": "steamcommunity:listing",
+            "lookback_days": lookback_days,
+            "sample_count": 0,
+            "low_hours": [],
+            "high_hours": [],
+        }
+
+    hour_rows = []
+    for hour, bucket in by_hour.items():
+        hour_median = median(bucket["prices"])
+        if hour_median is None:
+            continue
+        vs_overall = (hour_median - overall) / overall if overall else Decimal("0")
+        hour_rows.append(
+            {
+                "hour_utc": hour,
+                "median_price": decimal_to_str(quantize(hour_median, "0.0001")),
+                "vs_overall": decimal_to_str(quantize(vs_overall, "0.0001")),
+                "sample_count": len(bucket["prices"]),
+                "volume": bucket["volume"],
+            }
+        )
+
+    low_hours = sorted(hour_rows, key=lambda item: parse_decimal(item["vs_overall"]) or Decimal("0"))[:3]
+    high_hours = sorted(
+        hour_rows,
+        key=lambda item: parse_decimal(item["vs_overall"]) or Decimal("0"),
+        reverse=True,
+    )[:3]
+
+    current_hour = latest_row["hour"] if latest_row else datetime.now(timezone.utc).hour
+    current_bucket = next((item for item in hour_rows if item["hour_utc"] == current_hour), None)
+    current_vs = parse_decimal(current_bucket.get("vs_overall")) if current_bucket else None
+    return {
+        "source": "steamcommunity:listing",
+        "lookback_days": lookback_days,
+        "sample_count": len(all_prices),
+        "overall_hourly_median": decimal_to_str(quantize(overall, "0.0001")),
+        "low_hours": low_hours,
+        "high_hours": high_hours,
+        "current_hour_utc": current_hour,
+        "current_vs_overall": decimal_to_str(quantize(current_vs, "0.0001")),
+        "current_signal": intraday_signal(current_vs),
+    }
+
+
+def median(values: list[Decimal]) -> Decimal | None:
+    if not values:
+        return None
+    sorted_values = sorted(values)
+    midpoint = len(sorted_values) // 2
+    if len(sorted_values) % 2:
+        return sorted_values[midpoint]
+    return (sorted_values[midpoint - 1] + sorted_values[midpoint]) / Decimal("2")
+
+
+def intraday_signal(current_vs_overall: Decimal | None) -> str:
+    if current_vs_overall is None:
+        return "unknown"
+    if current_vs_overall <= Decimal("-0.015"):
+        return "buy_window"
+    if current_vs_overall >= Decimal("0.015"):
+        return "sell_window"
+    return "neutral"
 
 
 def pct_changes(values: list[Decimal]) -> list[Decimal]:
@@ -313,6 +428,54 @@ def period_change(values: list[Decimal], days: int) -> Decimal | None:
     if not previous:
         return None
     return (current - previous) / previous
+
+
+def change_since(points: list[dict[str, Any]], since_ts: int) -> Decimal | None:
+    if len(points) < 2:
+        return None
+    previous = None
+    for row in points:
+        if int(row["time"]) <= since_ts:
+            previous = row
+        else:
+            break
+    if previous is None:
+        previous = points[0]
+    current = points[-1]
+    previous_price = previous["price"]
+    current_price = current["price"]
+    if not previous_price:
+        return None
+    return (current_price - previous_price) / previous_price
+
+
+def worst_rolling_change(
+    points: list[dict[str, Any]],
+    *,
+    window_seconds: int,
+    lookback_seconds: int,
+) -> Decimal | None:
+    if len(points) < 2:
+        return None
+    last_time = int(points[-1]["time"])
+    cutoff = last_time - lookback_seconds
+    changes = []
+    for start_index, start_row in enumerate(points):
+        start_time = int(start_row["time"])
+        if start_time < cutoff:
+            continue
+        target_time = start_time + window_seconds
+        end_row = None
+        for candidate in points[start_index + 1 :]:
+            end_row = candidate
+            if int(candidate["time"]) >= target_time:
+                break
+        if end_row is None:
+            continue
+        start_price = start_row["price"]
+        if start_price:
+            changes.append((end_row["price"] - start_price) / start_price)
+    return min(changes) if changes else None
 
 
 def worst_period_change(values: list[Decimal], days: int) -> Decimal | None:

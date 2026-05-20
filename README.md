@@ -126,6 +126,8 @@ The radar now gets Steam-side price data directly from Steam Community Market:
 - the listing page provides sell/buy order depth and compact order tables.
 - the listing page also provides median-price history for volatility and
   cooldown-risk scoring.
+- recent hourly history is grouped by UTC hour to mark low-price/high-price
+  intraday windows in the radar output.
 
 The cache avoids repeatedly hitting Steam for the same market item. Tune it with:
 

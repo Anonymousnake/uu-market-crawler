@@ -169,6 +169,8 @@ def enrich_with_steam(row: dict[str, Any], config: RadarConfig) -> dict[str, Any
     row["steam_highest_buy_price"] = (listing.get("highest_buy_order") or {}).get("price_cny")
     row["steam_lowest_sell_price_usd"] = (listing.get("lowest_sell_order") or {}).get("price_usd")
     row["steam_highest_buy_price_usd"] = (listing.get("highest_buy_order") or {}).get("price_usd")
+    row["steam_sell_orders"] = (listing.get("sell_orders") or [])[:8]
+    row["steam_buy_orders"] = (listing.get("buy_orders") or [])[:8]
     row["steam_sell_order_count"] = listing.get("sell_order_count")
     row["steam_buy_order_count"] = listing.get("buy_order_count")
     row["steam_orderbook_currency"] = listing.get("orderbook_currency")
@@ -206,6 +208,7 @@ def score_row(
         if conservative_steam_net is not None and uu_price
         else None
     )
+    greedy_sell = greedy_sell_suggestion(uu_price, row.get("steam_sell_orders"))
 
     liquidity_penalty = Decimal("0")
     if on_sale_count < min_on_sale_count:
@@ -242,6 +245,7 @@ def score_row(
         "steam_volume": row.get("steam_volume"),
         "steam_sell_order_count": row.get("steam_sell_order_count"),
         "steam_buy_order_count": row.get("steam_buy_order_count"),
+        "steam_greedy_sell": greedy_sell,
         "steam_net_after_fee": str(steam_net.quantize(Decimal("0.0001"))) if steam_net is not None else None,
         "balance_discount": str(balance_discount.quantize(Decimal("0.01"))) if balance_discount is not None else None,
         "conservative_steam_net_after_fee": (
@@ -284,6 +288,63 @@ def conservative_net_after_cooldown(
     if volatility_7d is not None:
         return steam_net * max(Decimal("0.50"), Decimal("1") - volatility_7d * Decimal("2"))
     return None
+
+
+def greedy_sell_suggestion(
+    uu_price: Decimal | None,
+    sell_orders: Any,
+    *,
+    max_levels: int = 4,
+    max_cumulative_quantity: int = 300,
+    max_price_jump: Decimal = Decimal("0.05"),
+) -> dict[str, Any] | None:
+    if uu_price is None or not isinstance(sell_orders, list) or not sell_orders:
+        return None
+
+    levels = []
+    for index, row in enumerate(sell_orders[:max_levels], start=1):
+        if not isinstance(row, dict):
+            continue
+        price_cny = money(row.get("price_cny"))
+        quantity = int(row.get("quantity") or 0)
+        if price_cny is None:
+            continue
+        levels.append({"level": index, "price": price_cny, "quantity": quantity})
+    if len(levels) < 2:
+        return None
+
+    base_price = levels[0]["price"]
+    cumulative_quantity = 0
+    selected = levels[0]
+    skipped_levels = 0
+    for level in levels[1:]:
+        previous_quantity = cumulative_quantity + selected["quantity"]
+        jump = (level["price"] - base_price) / base_price if base_price else Decimal("0")
+        if previous_quantity <= max_cumulative_quantity and jump <= max_price_jump:
+            cumulative_quantity = previous_quantity
+            selected = level
+            skipped_levels = int(level["level"]) - 1
+        else:
+            break
+
+    if skipped_levels <= 0:
+        return None
+
+    gross_price = selected["price"]
+    net_price = gross_price / STEAM_FEE_DIVISOR
+    discount = uu_price / net_price * Decimal("10") if net_price else None
+    base_net = base_price / STEAM_FEE_DIVISOR
+    base_discount = uu_price / base_net * Decimal("10") if base_net else None
+    improvement = base_discount - discount if base_discount is not None and discount is not None else None
+    return {
+        "suggested_level": selected["level"],
+        "skipped_levels": skipped_levels,
+        "thin_quantity_before": cumulative_quantity,
+        "suggested_gross_price": str(gross_price.quantize(Decimal("0.01"))),
+        "suggested_net_price": str(net_price.quantize(Decimal("0.0001"))),
+        "suggested_balance_discount": str(discount.quantize(Decimal("0.01"))) if discount is not None else None,
+        "discount_improvement": str(improvement.quantize(Decimal("0.01"))) if improvement is not None else None,
+    }
 
 
 def risk_profile(

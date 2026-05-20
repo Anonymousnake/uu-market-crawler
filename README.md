@@ -128,6 +128,8 @@ The radar now gets Steam-side price data directly from Steam Community Market:
   cooldown-risk scoring.
 - recent hourly history is grouped by UTC hour to mark low-price/high-price
   intraday windows in the radar output.
+- thin top sell-order levels are analyzed as a greedy Steam listing hint, so
+  the bot can show when it may be worth listing a few levels higher.
 - UU prices observed during radar runs are stored in SQLite and grouped by
   Beijing hour to estimate when UU buy prices are usually lower.
 - `POST /sample` records UU prices only. It does not call Steam and does not

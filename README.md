@@ -2,6 +2,14 @@
 
 This workspace stores the safe crawler draft for UU Youpin market price checks.
 
+Public-repo safety:
+
+- Do not commit real `authorization`, `Cookie`, `uk`, `deviceUk`, `deviceId`,
+  `acw_tc`, AstrBot API keys, SQLite databases, or cache files.
+- Keep private values in environment variables, `.secrets/`, `.env`, or a
+  systemd `EnvironmentFile`.
+- See `SECURITY.md` before making the repository public.
+
 Current status:
 
 - The market page is reachable again at `https://youpin898.com/market`.

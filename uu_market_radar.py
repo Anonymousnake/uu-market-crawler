@@ -781,7 +781,7 @@ def sampler_error_fingerprint(errors: list[dict[str, Any]]) -> str:
 
 def notify_sampler_errors(config: RadarConfig, errors: list[dict[str, Any]], sampled_count: int) -> bool:
     api_key = env("ASTRBOT_API_KEY")
-    groups = [group.strip() for group in env("ASTRBOT_NOTIFY_GROUPS", "716934519,951944306").split(",") if group.strip()]
+    groups = [group.strip() for group in env("ASTRBOT_NOTIFY_GROUPS", "").split(",") if group.strip()]
     url = env("ASTRBOT_MESSAGE_URL", "http://127.0.0.1:6185/api/v1/im/message")
     if not api_key or not groups:
         return False

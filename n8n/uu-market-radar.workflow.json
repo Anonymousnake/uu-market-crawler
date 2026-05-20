@@ -1,7 +1,7 @@
 {
   "id": "uu-market-radar",
   "name": "UU Market Radar",
-  "active": true,
+  "active": false,
   "nodes": [
     {
       "parameters": {
@@ -102,13 +102,13 @@
         },
         "sendBody": true,
         "contentType": "json",
-        "bodyParametersJson": "={{JSON.stringify({umo:'napcat_onebot_v11:GroupMessage:951944306', message:$json.text})}}",
+        "bodyParametersJson": "={{JSON.stringify({umo:'napcat_onebot_v11:GroupMessage:' + $env.ASTRBOT_GROUP_ID_2, message:$json.text})}}",
         "options": {
           "timeout": 900000
         }
       },
-      "id": "send-astrbot-951944306",
-      "name": "Send to AstrBot 951944306",
+      "id": "send-astrbot-group-2",
+      "name": "Send to AstrBot Group 2",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -135,13 +135,13 @@
         },
         "sendBody": true,
         "contentType": "json",
-        "bodyParametersJson": "={{JSON.stringify({umo:'napcat_onebot_v11:GroupMessage:716934519', message:$json.text})}}",
+        "bodyParametersJson": "={{JSON.stringify({umo:'napcat_onebot_v11:GroupMessage:' + $env.ASTRBOT_GROUP_ID_1, message:$json.text})}}",
         "options": {
           "timeout": 900000
         }
       },
-      "id": "send-astrbot-716934519",
-      "name": "Send to AstrBot 716934519",
+      "id": "send-astrbot-group-1",
+      "name": "Send to AstrBot Group 1",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -189,25 +189,25 @@
       "main": [
         [
           {
-            "node": "Send to AstrBot 716934519",
+            "node": "Send to AstrBot Group 1",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Send to AstrBot 716934519": {
+    "Send to AstrBot Group 1": {
       "main": [
         [
           {
-            "node": "Send to AstrBot 951944306",
+            "node": "Send to AstrBot Group 2",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Send to AstrBot 951944306": {
+    "Send to AstrBot Group 2": {
       "main": [
         []
       ]

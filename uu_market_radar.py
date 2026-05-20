@@ -9,6 +9,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
+from fx_rate import FxRateConfig, get_usd_cny_rate
 from steam_market_api import SteamMarketConfig, get_market_snapshot
 from uu_market_probe import (
     QUERY_SALE_TEMPLATE_URL,
@@ -40,7 +41,9 @@ class RadarConfig:
     sleep_min: Decimal
     sleep_max: Decimal
     steam_market_cache_file: Path
+    fx_cache_file: Path
     usd_cny_rate: Decimal
+    fx_cache_ttl_seconds: int
     steam_cache_ttl_seconds: int
     steam_sleep_min: Decimal
     steam_sleep_max: Decimal
@@ -81,7 +84,9 @@ def load_config() -> RadarConfig:
         steam_market_cache_file=Path(
             env("STEAM_MARKET_CACHE_FILE", str(Path(__file__).with_name("steam_market_cache.json")))
         ),
+        fx_cache_file=Path(env("FX_CACHE_FILE", str(Path(__file__).with_name("fx_rate_cache.json")))),
         usd_cny_rate=decimal_env("USD_CNY_RATE", "7.20"),
+        fx_cache_ttl_seconds=int_env("FX_CACHE_TTL_SECONDS", "21600"),
         steam_cache_ttl_seconds=int_env("STEAM_CACHE_TTL_SECONDS", "900"),
         steam_sleep_min=decimal_env("STEAM_SLEEP_MIN", "1.5"),
         steam_sleep_max=decimal_env("STEAM_SLEEP_MAX", "3.5"),
@@ -141,7 +146,7 @@ def enrich_with_steam(row: dict[str, Any], config: RadarConfig) -> dict[str, Any
         hash_name,
         cache_file=config.steam_market_cache_file,
         config=SteamMarketConfig(
-            usd_cny_rate=config.usd_cny_rate,
+            usd_cny_rate=current_usd_cny_rate(config),
             cache_ttl_seconds=config.steam_cache_ttl_seconds,
             sleep_min=float(config.steam_sleep_min),
             sleep_max=float(config.steam_sleep_max),
@@ -165,6 +170,16 @@ def enrich_with_steam(row: dict[str, Any], config: RadarConfig) -> dict[str, Any
     row["steam_orderbook_fx_rate"] = listing.get("orderbook_usd_cny_rate")
     row["history_stats"] = steam.get("history_stats")
     return row
+
+
+def current_usd_cny_rate(config: RadarConfig) -> Decimal:
+    return get_usd_cny_rate(
+        FxRateConfig(
+            cache_file=config.fx_cache_file,
+            fallback_usd_cny=config.usd_cny_rate,
+            ttl_seconds=config.fx_cache_ttl_seconds,
+        )
+    )
 
 
 def score_row(watch: dict[str, Any], row: dict[str, Any], min_on_sale_count: int) -> dict[str, Any]:

@@ -10,3 +10,4 @@ __pycache__/
 node_modules/
 radar.latest.json
 steam_market_cache*.json
+fx_rate_cache*.json

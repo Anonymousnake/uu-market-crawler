@@ -134,12 +134,16 @@ STEAM_CACHE_TTL_SECONDS=900
 STEAM_SLEEP_MIN=1.5
 STEAM_SLEEP_MAX=3.5
 USD_CNY_RATE=7.20
+FX_CACHE_FILE=D:/Codex/uu-market-crawler/fx_rate_cache.json
+FX_CACHE_TTL_SECONDS=21600
 ```
 
 Steam listing order books may render in USD even when `currency=23` is used.
 The radar converts those sell/buy order prices to CNY with `USD_CNY_RATE`.
 Current balance math uses Steam `priceoverview` median CNY price; order book
 prices are shown as depth and sanity-check context.
+If an online FX source is available, the crawler prefers it and falls back to
+`USD_CNY_RATE`.
 
 Run the filter/tag probe instead:
 

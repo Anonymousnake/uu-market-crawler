@@ -3,6 +3,7 @@ import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
+from health_checks import bot_health, crawler_health, server_report
 from uu_market_radar import DEFAULT_OUTPUT, run_radar, sample_uu_prices
 
 
@@ -19,6 +20,15 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/health":
             self._json(200, {"ok": True})
+            return
+        if path == "/health/crawler":
+            self._json(200, crawler_health())
+            return
+        if path == "/health/bot":
+            self._json(200, bot_health())
+            return
+        if path == "/health/server":
+            self._json(200, server_report())
             return
         if path == "/latest":
             if DEFAULT_OUTPUT.exists():

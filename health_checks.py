@@ -8,6 +8,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+import calendar
 from pathlib import Path
 from typing import Any
 
@@ -211,7 +212,7 @@ def sqlite_age_minutes(value: str | None) -> float | None:
     if not value:
         return None
     try:
-        ts = time.mktime(time.strptime(value, "%Y-%m-%d %H:%M:%S"))
+        ts = calendar.timegm(time.strptime(value, "%Y-%m-%d %H:%M:%S"))
     except ValueError:
         return None
     return max(0.0, (time.time() - ts) / 60)

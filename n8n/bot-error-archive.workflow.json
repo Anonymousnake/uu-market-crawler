@@ -80,9 +80,21 @@
         },
         "sendBody": true,
         "contentType": "json",
-        "bodyParametersJson": "={{JSON.stringify({umo:'napcat_onebot_v11:GroupMessage:' + $env.ASTRBOT_NOTIFY_GROUP_ID, message:$json.text})}}",
         "options": {
           "timeout": 300000
+        },
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "umo",
+              "value": "={{'napcat_onebot_v11:GroupMessage:' + $env.ASTRBOT_NOTIFY_GROUP_ID}}"
+            },
+            {
+              "name": "message",
+              "value": "={{$json.text}}"
+            }
+          ]
         }
       },
       "id": "send-astrbot-group",

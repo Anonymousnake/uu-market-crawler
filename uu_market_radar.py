@@ -28,6 +28,7 @@ from uu_market_probe import (
 DEFAULT_WATCHLIST = Path(__file__).with_name("watchlist.json")
 DEFAULT_OUTPUT = Path(__file__).with_name("radar.latest.json")
 STEAM_FEE_DIVISOR = Decimal("1.15")
+DEFAULT_CONSERVATIVE_MAX_DRAWDOWN = Decimal("0.25")
 
 
 @dataclass
@@ -290,7 +291,10 @@ def conservative_net_after_cooldown(
     worst_change_7d = money(history_stats.get("worst_change_7d"))
     volatility_7d = money(history_stats.get("volatility_7d"))
     if worst_change_7d is not None and worst_change_7d < 0:
-        return steam_net * (Decimal("1") + worst_change_7d)
+        max_drawdown = decimal_env("UU_CONSERVATIVE_MAX_DRAWDOWN", str(DEFAULT_CONSERVATIVE_MAX_DRAWDOWN))
+        max_drawdown = min(max(max_drawdown, Decimal("0.01")), Decimal("0.80"))
+        capped_change = max(worst_change_7d, -max_drawdown)
+        return steam_net * (Decimal("1") + capped_change)
     if volatility_7d is not None:
         return steam_net * max(Decimal("0.50"), Decimal("1") - volatility_7d * Decimal("2"))
     return None

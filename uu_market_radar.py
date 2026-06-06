@@ -15,9 +15,11 @@ from typing import Any
 from fx_rate import FxRateConfig, get_usd_cny_rate
 from steam_market_api import SteamMarketConfig, get_market_snapshot
 from uu_market_probe import (
+    QUERY_ON_SALE_COMMODITY_URL,
     QUERY_SALE_TEMPLATE_URL,
     build_headers,
     init_cache,
+    parse_on_sale_response,
     parse_sale_template_response,
     post_json_once,
     to_decimal,
@@ -133,15 +135,100 @@ def query_sale_template(headers: dict[str, str], query: str, page_size: int) -> 
     return parsed
 
 
-def choose_exact(query: str, rows: list[dict[str, Any]]) -> dict[str, Any] | None:
-    lowered = query.lower()
+def normalize_match_key(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def choose_exact(query: str, rows: list[dict[str, Any]], watch: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    candidates = {normalize_match_key(query)}
+    if watch:
+        candidates.update(
+            {
+                normalize_match_key(watch.get("hash_name")),
+                normalize_match_key(watch.get("name")),
+            }
+        )
+        template_id = watch.get("template_id")
+        if template_id is not None:
+            template_text = str(template_id).strip()
+            for row in rows:
+                row_template = row.get("template_id", row.get("id"))
+                if row_template is not None and str(row_template).strip() == template_text:
+                    return row
+    candidates.discard("")
     for row in rows:
-        if str(row.get("hash_name") or "").lower() == lowered:
+        if normalize_match_key(row.get("hash_name")) in candidates:
             return row
     for row in rows:
-        if str(row.get("name") or "").lower() == lowered:
+        if normalize_match_key(row.get("name")) in candidates:
             return row
-    return rows[0] if rows else None
+    return None
+
+
+def query_on_sale_template(
+    headers: dict[str, str],
+    watch: dict[str, Any],
+    page_size: int,
+) -> dict[str, Any]:
+    template_id = str(watch.get("template_id") or "").strip()
+    if not template_id:
+        raise ValueError("watch item has no template_id")
+
+    payload = {
+        "gameId": str(watch.get("game_id") or env("UU_GAME_ID", "730")),
+        "listType": str(watch.get("list_type") or env("UU_LIST_TYPE", "10")),
+        "templateId": template_id,
+        "listSortType": int(env("UU_ONSALE_LIST_SORT_TYPE", env("UU_LIST_SORT_TYPE", "1"))),
+        "sortType": int(env("UU_ONSALE_SORT_TYPE", env("UU_SORT_TYPE", "0"))),
+        "pageIndex": 1,
+        "pageSize": page_size,
+    }
+    result = post_json_once(QUERY_ON_SALE_COMMODITY_URL, payload, headers)
+    if not isinstance(result.json_body, dict):
+        raise ValueError(f"non-json on-sale response while querying template {template_id}: {result.text_preview[:160]}")
+    rows = parse_on_sale_response(result.json_body)
+    write_cache("onsale", rows)
+    market_row = build_market_row_from_on_sale(watch, rows, result.json_body)
+    if market_row is None:
+        query = str(watch.get("query") or watch.get("hash_name") or template_id)
+        raise ValueError(f"no exact UU listing for {query} (template_id={template_id})")
+    return market_row
+
+
+def build_market_row_from_on_sale(
+    watch: dict[str, Any],
+    rows: list[dict[str, Any]],
+    body: dict[str, Any],
+) -> dict[str, Any] | None:
+    selected = choose_exact(str(watch.get("query") or ""), rows, watch)
+    if selected is None:
+        return None
+
+    total_count = body.get("TotalCount", body.get("totalCount", body.get("total_count")))
+    try:
+        on_sale_count = int(total_count)
+    except (TypeError, ValueError):
+        on_sale_count = len(rows)
+
+    listing_id = selected.get("id")
+    row = dict(selected)
+    row["listing_id"] = listing_id
+    row["id"] = row.get("template_id") or watch.get("template_id") or listing_id
+    row["template_id"] = row.get("template_id") or watch.get("template_id")
+    row["on_sale_count"] = on_sale_count
+    return row
+
+
+def query_watch_item(headers: dict[str, str], watch: dict[str, Any], config: RadarConfig) -> dict[str, Any]:
+    if watch.get("template_id") is not None:
+        return query_on_sale_template(headers, watch, config.page_size)
+
+    query = str(watch.get("query"))
+    rows = query_sale_template(headers, query, config.page_size)
+    exact = choose_exact(query, rows, watch)
+    if exact is None:
+        raise ValueError(f"no exact UU template match for {query}")
+    return exact
 
 
 def enrich_with_steam(row: dict[str, Any], config: RadarConfig) -> dict[str, Any]:
@@ -562,7 +649,7 @@ def record_uu_price(connection: Any, watch: dict[str, Any], row: dict[str, Any])
         (
             str(watch.get("query") or ""),
             str(row.get("hash_name") or watch.get("hash_name") or ""),
-            str(row.get("id") or watch.get("template_id") or ""),
+            str(row.get("template_id") or row.get("id") or watch.get("template_id") or ""),
             str(price),
             int(row.get("on_sale_count") or 0),
         ),
@@ -849,22 +936,20 @@ def run_radar() -> dict[str, Any]:
                 time.sleep(float(random.uniform(float(config.sleep_min), float(config.sleep_max))))
             query = str(watch.get("query"))
             try:
-                rows = query_sale_template(headers, query, config.page_size)
-                exact = choose_exact(query, rows)
-                if exact is not None:
-                    record_uu_price(cache_connection, watch, exact)
-                    uu_intraday_stats = summarize_uu_intraday(
-                        cache_connection,
-                        str(exact.get("hash_name") or watch.get("hash_name") or ""),
-                    )
-                    exact = enrich_with_steam(exact, config)
-                    candidate = score_row(watch, exact, config.min_on_sale_count, uu_intraday_stats)
-                    edge = money(candidate.get("edge"))
-                    if edge is not None and edge >= config.min_edge:
-                        candidates.append(candidate)
-                        if should_notify(config, cache_connection, candidate):
-                            notifications.append(candidate)
-                            record_alert(cache_connection, candidate)
+                exact = query_watch_item(headers, watch, config)
+                record_uu_price(cache_connection, watch, exact)
+                uu_intraday_stats = summarize_uu_intraday(
+                    cache_connection,
+                    str(exact.get("hash_name") or watch.get("hash_name") or ""),
+                )
+                exact = enrich_with_steam(exact, config)
+                candidate = score_row(watch, exact, config.min_on_sale_count, uu_intraday_stats)
+                edge = money(candidate.get("edge"))
+                if edge is not None and edge >= config.min_edge:
+                    candidates.append(candidate)
+                    if should_notify(config, cache_connection, candidate):
+                        notifications.append(candidate)
+                        record_alert(cache_connection, candidate)
             except Exception as exc:  # noqa: BLE001 - CLI should collect per-item failures.
                 errors.append({"query": query, "error": str(exc)})
                 if "403" in str(exc) or "429" in str(exc):
@@ -910,11 +995,7 @@ def sample_uu_prices() -> dict[str, Any]:
                 time.sleep(float(random.uniform(float(config.sleep_min), float(config.sleep_max))))
             query = str(watch.get("query"))
             try:
-                rows = query_sale_template(headers, query, config.page_size)
-                exact = choose_exact(query, rows)
-                if exact is None:
-                    errors.append({"query": query, "error": "no matching UU item"})
-                    continue
+                exact = query_watch_item(headers, watch, config)
                 record_uu_price(cache_connection, watch, exact)
                 stats = summarize_uu_intraday(
                     cache_connection,

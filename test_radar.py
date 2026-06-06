@@ -1,4 +1,6 @@
-from uu_market_radar import build_market_row_from_on_sale, choose_exact
+from decimal import Decimal
+
+from uu_market_radar import build_market_row_from_on_sale, choose_exact, risk_profile
 
 
 def test_choose_exact_does_not_fall_back_to_first_unrelated_row():
@@ -31,3 +33,18 @@ def test_build_market_row_from_on_sale_uses_template_listing_and_total_count():
     assert row["hash_name"] == "Recoil Case"
     assert row["price"] == "2.36"
     assert row["on_sale_count"] == 10000
+
+
+def test_risk_profile_marks_conservative_loss_as_high_cooldown_risk():
+    risk = risk_profile(
+        kind="case",
+        uu_price=Decimal("81.37"),
+        edge=Decimal("0.175"),
+        on_sale_count=1928,
+        min_on_sale_count=100,
+        conservative_discount=Decimal("11.35"),
+    )
+
+    assert risk["risk_level"] == "high"
+    assert "conservative discount implies loss" in risk["risk_notes"]
+    assert risk["risk_dimensions"]["cooldown"]["level"] == "high"

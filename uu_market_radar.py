@@ -560,8 +560,13 @@ def risk_profile(
             dimensions["timing"]["notes"].append("current hour is relatively cheap")
 
     if conservative_discount is not None:
-        if conservative_discount >= Decimal("9.30"):
-            penalty += Decimal("0.01")
+        if conservative_discount >= Decimal("10.00"):
+            penalty += Decimal("0.18")
+            notes.append("conservative discount implies loss")
+            dimensions["cooldown"]["level"] = "high"
+            dimensions["cooldown"]["notes"].append("conservative discount implies loss")
+        elif conservative_discount >= Decimal("9.30"):
+            penalty += Decimal("0.04")
             notes.append("conservative discount too thin")
             dimensions["cooldown"]["level"] = max_level(dimensions["cooldown"]["level"], "medium")
             dimensions["cooldown"]["notes"].append("conservative discount too thin")
